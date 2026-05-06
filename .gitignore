@@ -29,3 +29,6 @@ env/
 .idea/
 *.swp
 .DS_Store
+
+# NFS sillyrename tombstones
+.nfs*
