@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "idd-tc-mortality"
+version = "0.1.0"
+description = "IDD tropical cyclone mortality pipeline"
+authors = ["Bobby Reiner"]
+packages = [{ include = "idd_tc_mortality", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+numpy = "*"
+pandas = "*"
+statsmodels = "*"
+scipy = "*"
+click = "*"
+pyarrow = "*"
+matplotlib = "*"
+seaborn = "*"
+scikit-learn = "*"
+ipykernel = "^7.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+pytest-cov = "*"
+ruff = "*"
+mypy = "*"
+
+[tool.poetry.scripts]
+run-validate = "idd_tc_mortality.step_00_validate.run_validate:main"
+run-fit-component = "idd_tc_mortality.fit.run_component:main"
+run-fit-orchestrate = "idd_tc_mortality.fit.orchestrate:main"
+run-evaluate = "idd_tc_mortality.evaluate.run_evaluate:main"
+run-evaluate-orchestrate = "idd_tc_mortality.evaluate.run_evaluate_orchestrate:main"
+run-select = "idd_tc_mortality.select.run_select:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

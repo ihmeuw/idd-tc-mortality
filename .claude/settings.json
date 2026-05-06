@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -c '\\\\.pyc$')",
+      "Bash(grep -E '\\\\.pyc$|__pycache__/')",
+      "Bash(git add *)"
+    ]
+  }
+}
