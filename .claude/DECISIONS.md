@@ -73,6 +73,11 @@ to a different optimizer (e.g. BFGS) that doesn't use IRLS.
 **Why:** Same incident as above. Today's session began with zero commits; we made one large initial commit and then proceeded for ~3 hours of work (notebook rewrites, ingest, fit-code changes, smoke test) before realizing nothing was on GitHub. Even after the initial commit, the natural moment to push was missed because a wrong claim about remote state had been made earlier. Treating "is this code backed up?" as a first-class concern, surfaced loudly, prevents this.
 **Revisit if:** The repo moves to a workflow where local-only commits are deliberate (e.g. a private branch), in which case the rule should be conditional on branch name.
 
+## 2026-05-06: Slurm resource asks tightened from 2G/30m to 1G/5m
+**Decision:** `_SLURM_RESOURCES` in `orchestrate.py` now asks for 1 GiB memory and 5 min runtime per spec (was 2 GiB / 30 min).
+**Why:** `seff` on ~18k completed jobs from the 2026-05-06 preliminary run reported median 9 s runtime / 0.24 GiB memory, max 39 s / 0.46 GiB. The original asks were over-allocated by roughly 200× on runtime and 4× on memory, hemorrhaging fairshare. New values give ~8× headroom over observed max runtime and ~2× over max memory — comfortable for outliers without waste. Also: smoke test for cluster-bound code should now include a Slurm-submitted sample (not just `--local`) so `seff` calibration happens before the full submission, not after.
+**Revisit if:** A future grid expansion (more covariates, finer thresholds, larger data) pushes per-spec runtime past ~3 min consistently, or memory past ~700 MiB.
+
 ---
 
 ## 2026-04-14: Old-repo assessment — what to port and how
