@@ -59,8 +59,8 @@ logger = logging.getLogger(__name__)
 _SLURM_CLUSTER = "slurm"
 _SLURM_RESOURCES = {
     "cores": 1,
-    "memory": "2G",
-    "runtime": "30m",
+    "memory": "1G",
+    "runtime": "5m",
     "queue": "all.q",
     "project": "proj_rapidresponse",
 }
