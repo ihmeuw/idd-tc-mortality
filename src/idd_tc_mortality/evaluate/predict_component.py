@@ -2,13 +2,19 @@
 Component prediction: predict_one_component(spec, result, df).
 
 Takes a fitted component spec dict, a FitResult, and the full DataFrame. Returns a
-pd.Series of rate-scale predictions indexed to the rows of df that this component
-applies to:
+pd.Series of rate-scale or probability-scale predictions for **every row of df**:
 
-    s1   — all rows (probabilities, in [0, 1])
-    s2   — deaths >= 1 rows (probabilities, in [0, 1])
-    bulk — deaths >= 1 AND death_rate < threshold_rate rows (rates, >= 0)
-    tail — death_rate >= threshold_rate rows (rates, >= threshold_rate for gpd)
+    s1   — P(deaths >= 1) for every row
+    s2   — P(rate >= threshold | deaths >= 1) for every row (model evaluated at row covariates)
+    bulk — E[rate | deaths >= 1, rate < threshold] for every row
+    tail — E[rate | rate >= threshold] for every row (>= threshold_rate when family fits on excess)
+
+Predictions are made for every row in df, not just the row's "applicable subset" at fit
+time. The fitted model is a function of covariates and applies to any row with valid
+covariates; subsetting (for in-stage metrics that compare to observed outcomes on the
+applicable subset) happens at the call site, not here. Predicting on all rows is what
+the unconditional double-hurdle assembly E[rate] = p_s1 * (p_s2*rate_tail + (1-p_s2)*rate_bulk)
+requires.
 
 All predictions are on the rate or probability scale as appropriate for the component.
 Count-scale families (nb, poisson) return rates — the log_exposed offset cancels in
@@ -69,13 +75,8 @@ def predict_one_component(
     Returns
     -------
     pd.Series
-        Rate-scale (or probability-scale for s1/s2) predictions, indexed to
-        the applicable subset of df. Length is strictly <= len(df).
-
-        s1:   length == len(df),  index == df.index
-        s2:   index == df.index[deaths >= 1]
-        bulk: index == df.index[bulk_mask]
-        tail: index == df.index[tail_mask]
+        Rate-scale (or probability-scale for s1/s2) predictions for every row of df.
+        Length == len(df), index == df.index.
 
     Raises
     ------
@@ -85,27 +86,17 @@ def predict_one_component(
     component = spec["component"]
     covariates = spec["covariate_combo"]
 
-    death_rate = df["deaths"].values / df["exposed"].values
-
-    # ---- Determine applicable subset ----------------------------------------
-    if component == "s1":
-        mask = np.ones(len(df), dtype=bool)
-    elif component == "s2":
-        mask = df["deaths"].values >= 1
-    elif component in ("bulk", "tail"):
-        threshold_rate = _get_threshold_rate(spec, death_rate)
-        if component == "bulk":
-            mask = (df["deaths"].values >= 1) & (death_rate < threshold_rate)
-        else:
-            mask = death_rate >= threshold_rate
-    else:
+    if component not in ("s1", "s2", "bulk", "tail"):
         raise ValueError(
             f"Unknown component type: {component!r}. "
             "Expected one of 's1', 's2', 'bulk', 'tail'."
         )
 
-    sub_index = df.index[mask]
-    df_sub = df.loc[sub_index]
+    # threshold_rate is needed for bulk/tail post-processing (beta multiply, excess add).
+    threshold_rate: float | None = None
+    if component in ("bulk", "tail"):
+        death_rate = df["deaths"].values / df["exposed"].values
+        threshold_rate = _get_threshold_rate(spec, death_rate)
 
     # ---- Build design matrix and align to fitted param_names ----------------
     if component in ("s1", "s2"):
@@ -121,10 +112,10 @@ def predict_one_component(
             exposure_mode = spec.get("exposure_mode", "free+weight")
             include_log_exposed = exposure_mode in ("free", "free+weight")
 
-    X = build_X(df_sub, covariates, include_log_exposed=include_log_exposed)
+    X = build_X(df, covariates, include_log_exposed=include_log_exposed)
     X = align_X(X, result.param_names)
 
-    log_exposed = np.log(df_sub["exposed"].values)
+    log_exposed = np.log(df["exposed"].values)
 
     # ---- Call the appropriate predict function --------------------------------
     if component == "s1":
@@ -152,4 +143,4 @@ def predict_one_component(
             # Applies to: gamma, lognormal, gpd, and any future excess-rate tail family.
             preds = preds + threshold_rate
 
-    return pd.Series(preds, index=sub_index, name=component)
+    return pd.Series(preds, index=df.index, name=component)

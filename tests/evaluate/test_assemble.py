@@ -123,6 +123,49 @@ def test_predictions_driven_by_p_s1(pipeline):
     )
 
 
+def test_no_death_rows_have_nonzero_predictions(pipeline):
+    """Regression test for the v3 underprediction bug.
+
+    Previously, assemble_predictions reindexed S2/bulk/tail predictions to df.index
+    and filled NaN with 0 outside their fit subsets, then multiplied by p_s1. That
+    made every any_death=0 row's prediction exactly 0 (since p_s2 = rate_bulk =
+    rate_tail = 0 there), zeroing out most of the data's contribution to total
+    predicted deaths and making fwd_pred_obs_ratio == full_pred_obs_ratio across
+    the whole grid. The fix is to predict S2/bulk/tail on the full df.
+    """
+    result = _assemble(pipeline)
+    any_death = pipeline["any_death"].astype(bool)
+
+    no_death_preds = result.values[~any_death]
+    n_zero = int((no_death_preds == 0).sum())
+    n_total = int((~any_death).sum())
+
+    assert n_zero == 0, (
+        f"{n_zero}/{n_total} any_death=0 rows have predicted rate == 0. "
+        "Expected non-zero predictions everywhere when p_s1 > 0 and the "
+        "rate components are positive (i.e., the model is being applied "
+        "to all rows, not just the conditional fit subset)."
+    )
+
+
+def test_assembled_matches_formula_on_full_df(pipeline):
+    """The assembled prediction must equal p_s1 * (p_s2*rate_tail + (1-p_s2)*rate_bulk)
+    using each component's prediction on EVERY row of df, not zero-filled outside
+    the fit subset."""
+    from idd_tc_mortality.evaluate.predict_component import predict_one_component
+
+    df = pipeline["df"]
+    p_s1   = predict_one_component(pipeline["s1_spec"],   pipeline["s1_result"],   df).values
+    p_s2   = predict_one_component(pipeline["s2_spec"],   pipeline["s2_result"],   df).values
+    r_bulk = predict_one_component(pipeline["bulk_spec"], pipeline["bulk_result"], df).values
+    r_tail = predict_one_component(pipeline["tail_spec"], pipeline["tail_result"], df).values
+
+    expected = p_s1 * (p_s2 * r_tail + (1.0 - p_s2) * r_bulk)
+    result = _assemble(pipeline)
+
+    np.testing.assert_allclose(result.values, expected, rtol=1e-10)
+
+
 # ---------------------------------------------------------------------------
 # Determinism and index preservation
 # ---------------------------------------------------------------------------

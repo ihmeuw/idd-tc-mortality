@@ -9,21 +9,16 @@ assemble_predictions(s1_result, s2_result, bulk_result, bulk_spec,
 
         E[rate] = p_s1 * (p_s2 * rate_tail + (1 - p_s2) * rate_bulk)
 
-    Each component prediction is a pd.Series indexed to the applicable subset of df.
-    The assembly proceeds as follows:
+    predict_one_component returns predictions for every row of df; the fitted
+    component models are functions of covariates and apply to every row regardless
+    of the row's outcome at fit time. The unconditional formula above is exactly:
 
-    1. Predict each component → pd.Series with subset index.
-    2. Reindex each to df.index — rows outside the component's subset become NaN.
-       NaN is used as a sentinel here: if any non-subset row has a non-NaN prediction
-       it indicates a wiring bug.
-    3. Fill NaN with 0 just before calling assemble_dh_prediction.
-       Zero is the correct fill: p_s1 ≈ 0 for non-event rows, so the product
-       vanishes regardless of S2/bulk/tail values; and bulk/tail rows outside
-       their subsets do not contribute to the expected rate.
-    4. Call assemble_dh_prediction and return as pd.Series indexed to df.
+        E[rate | row] = P(deaths>=1 | row) *
+                        [P(rate>=thresh | row, deaths>=1) * E[rate | row, rate>=thresh]
+                         + P(rate<thresh | row, deaths>=1) * E[rate | row, rate<thresh]]
 
-    The NaN → 0 fill is applied to s2, bulk, and tail only. s1 always covers
-    the full dataset and should have no NaN after prediction.
+    Every term on the right-hand side is evaluated at each row's covariates. There
+    is no "applicable subset only" qualifier on any of them.
 
 assemble_oos_predictions(model_spec_key, seed, df, fold_assignments, results_dir)
 
@@ -47,7 +42,6 @@ ignored for s1.
 from __future__ import annotations
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from idd_tc_mortality.cache import component_id, load_result
@@ -90,34 +84,17 @@ def assemble_predictions(
     ValueError
         If s1 predictions contain NaN (s1 must cover the full dataset).
     """
-    # Predict each component on its applicable subset.
-    p_s1_series   = predict_one_component(s1_spec,   s1_result,   df)
-    p_s2_series   = predict_one_component(s2_spec,   s2_result,   df)
+    # Each component predicts for every row of df.
+    p_s1_series      = predict_one_component(s1_spec,   s1_result,   df)
+    p_s2_series      = predict_one_component(s2_spec,   s2_result,   df)
     rate_bulk_series = predict_one_component(bulk_spec, bulk_result, df)
     rate_tail_series = predict_one_component(tail_spec, tail_result, df)
 
-    # s1 covers the full dataset — a NaN here is a bug.
-    if p_s1_series.isna().any():
-        raise ValueError(
-            "s1 predictions contain NaN. s1 must cover all rows of df."
-        )
-
-    # Reindex subset predictions to the full dataset; non-applicable rows → NaN.
-    p_s2_full   = p_s2_series.reindex(df.index)
-    rate_bulk_full = rate_bulk_series.reindex(df.index)
-    rate_tail_full = rate_tail_series.reindex(df.index)
-
-    # Fill NaN with 0 just before assembly. The contribution of these rows to
-    # the expected rate is near-zero because p_s1 ≈ 0 for non-event rows.
-    p_s2_full      = p_s2_full.fillna(0.0)
-    rate_bulk_full = rate_bulk_full.fillna(0.0)
-    rate_tail_full = rate_tail_full.fillna(0.0)
-
     assembled = assemble_dh_prediction(
         p_s1=p_s1_series.values,
-        p_s2=p_s2_full.values,
-        rate_bulk=rate_bulk_full.values,
-        rate_tail=rate_tail_full.values,
+        p_s2=p_s2_series.values,
+        rate_bulk=rate_bulk_series.values,
+        rate_tail=rate_tail_series.values,
     )
 
     return pd.Series(assembled, index=df.index, name="predicted_rate")

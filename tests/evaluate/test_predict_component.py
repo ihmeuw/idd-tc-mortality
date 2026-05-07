@@ -58,18 +58,16 @@ def test_s1_values_finite(pipeline):
 # S2
 # ---------------------------------------------------------------------------
 
-def test_s2_index_is_deaths_ge1_subset(pipeline):
+def test_s2_index_is_full_df(pipeline):
     df = pipeline["df"]
-    expected_index = df.index[df["deaths"].values >= 1]
     result = predict_one_component(pipeline["s2_spec"], pipeline["s2_result"], df)
-    assert list(result.index) == list(expected_index)
+    assert list(result.index) == list(df.index)
 
 
-def test_s2_length_equals_s1_count(pipeline):
+def test_s2_length_equals_full_df(pipeline):
     df = pipeline["df"]
-    n_s1 = int((df["deaths"].values >= 1).sum())
     result = predict_one_component(pipeline["s2_spec"], pipeline["s2_result"], df)
-    assert len(result) == n_s1
+    assert len(result) == len(df)
 
 
 def test_s2_values_in_0_1(pipeline):
@@ -82,17 +80,16 @@ def test_s2_values_in_0_1(pipeline):
 # Bulk (gamma)
 # ---------------------------------------------------------------------------
 
-def test_bulk_index_is_bulk_subset(pipeline):
+def test_bulk_index_is_full_df(pipeline):
     df = pipeline["df"]
-    expected_index = df.index[pipeline["bulk_mask"]]
     result = predict_one_component(pipeline["bulk_spec"], pipeline["bulk_result"], df)
-    assert list(result.index) == list(expected_index)
+    assert list(result.index) == list(df.index)
 
 
-def test_bulk_length_equals_bulk_count(pipeline):
-    n_bulk = int(pipeline["bulk_mask"].sum())
-    result = predict_one_component(pipeline["bulk_spec"], pipeline["bulk_result"], pipeline["df"])
-    assert len(result) == n_bulk
+def test_bulk_length_equals_full_df(pipeline):
+    df = pipeline["df"]
+    result = predict_one_component(pipeline["bulk_spec"], pipeline["bulk_result"], df)
+    assert len(result) == len(df)
 
 
 def test_bulk_gamma_predictions_nonnegative(pipeline):
@@ -109,17 +106,16 @@ def test_bulk_gamma_predictions_finite(pipeline):
 # Tail (gamma)
 # ---------------------------------------------------------------------------
 
-def test_tail_index_is_tail_subset(pipeline):
+def test_tail_index_is_full_df(pipeline):
     df = pipeline["df"]
-    expected_index = df.index[pipeline["tail_mask"]]
     result = predict_one_component(pipeline["tail_spec"], pipeline["tail_result"], df)
-    assert list(result.index) == list(expected_index)
+    assert list(result.index) == list(df.index)
 
 
-def test_tail_length_equals_tail_count(pipeline):
-    n_tail = int(pipeline["tail_mask"].sum())
-    result = predict_one_component(pipeline["tail_spec"], pipeline["tail_result"], pipeline["df"])
-    assert len(result) == n_tail
+def test_tail_length_equals_full_df(pipeline):
+    df = pipeline["df"]
+    result = predict_one_component(pipeline["tail_spec"], pipeline["tail_result"], df)
+    assert len(result) == len(df)
 
 
 def test_tail_gamma_predictions_nonnegative(pipeline):

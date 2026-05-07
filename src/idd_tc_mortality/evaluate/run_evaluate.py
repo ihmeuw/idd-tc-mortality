@@ -417,7 +417,10 @@ def main(
                             "tail_family":        tail_spec["family"],
                             "tail_exposure_mode": tail_spec.get("exposure_mode"),
                             **_prefix_keys(calc_s1_metrics(any_death, s1_pred_series.values), "s1_"),
-                            **_prefix_keys(calc_s2_metrics(s2_y_true, s2_pred_series.values), "s2_"),
+                            **_prefix_keys(
+                                calc_s2_metrics(s2_y_true, s2_pred_series.values[s2_mask]),
+                                "s2_",
+                            ),
                         }
 
                         bulk_pred_series: pd.Series | None = None
@@ -426,7 +429,7 @@ def main(
                             row_is.update(_prefix_keys(
                                 calc_continuous_metrics(
                                     death_rate[bulk_mask],
-                                    bulk_pred_series.values,
+                                    bulk_pred_series.values[bulk_mask],
                                     df["exposed"].values[bulk_mask],
                                 ),
                                 "bulk_",
@@ -438,7 +441,7 @@ def main(
                             row_is.update(_prefix_keys(
                                 calc_continuous_metrics(
                                     death_rate[tail_mask],
-                                    tail_pred_series.values,
+                                    tail_pred_series.values[tail_mask],
                                     df["exposed"].values[tail_mask],
                                 ),
                                 "tail_",
@@ -588,7 +591,7 @@ def main(
                                     )
                                     s2_y_h = (dr_h[s2_mask_h] >= threshold_rate).astype(float)
                                     fold_metrics["s2"].append(
-                                        calc_s2_metrics(s2_y_h, s2_pred_h.values)
+                                        calc_s2_metrics(s2_y_h, s2_pred_h.values[s2_mask_h])
                                     )
 
                                 # Bulk: held-out rows in the bulk subset
@@ -603,7 +606,7 @@ def main(
                                     fold_metrics["bulk"].append(
                                         calc_continuous_metrics(
                                             dr_h[bulk_mask_h],
-                                            bulk_pred_h.values,
+                                            bulk_pred_h.values[bulk_mask_h],
                                             df_held["exposed"].values[bulk_mask_h],
                                         )
                                     )
@@ -617,7 +620,7 @@ def main(
                                     fold_metrics["tail"].append(
                                         calc_continuous_metrics(
                                             dr_h[tail_mask_h],
-                                            tail_pred_h.values,
+                                            tail_pred_h.values[tail_mask_h],
                                             df_held["exposed"].values[tail_mask_h],
                                         )
                                     )
