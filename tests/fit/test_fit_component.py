@@ -469,3 +469,20 @@ def test_fit_error_result_has_nan_params(monkeypatch):
 
     assert np.all(np.isnan(result.params))
     assert result.param_names == ["__failed__"]
+
+
+def test_threshold_failure_returns_non_converged_fitresult():
+    """An all-zero-deaths df makes compute_thresholds raise — must be caught, not crash.
+
+    Bulk/tail/s2 specs without a precomputed threshold_rate trigger compute_thresholds,
+    which raises ValueError if no positive death rates exist. The catch in
+    fit_one_component should turn this into a non-converged sentinel.
+    """
+    df_no_deaths = _DF.assign(deaths=0.0)
+    spec = _spec("tail", family="gamma", q=0.75)
+    result = fit_one_component(spec, df_no_deaths)
+
+    assert result.converged is False
+    assert "fit_error" in result.meta
+    assert "positive death rates" in result.meta["fit_error"].lower()
+    assert result.param_names == ["__failed__"]

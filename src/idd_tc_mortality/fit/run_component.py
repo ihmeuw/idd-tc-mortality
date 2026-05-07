@@ -29,11 +29,9 @@ import json
 import logging
 
 import click
-import numpy as np
 import pandas as pd
 
 from idd_tc_mortality.cache import component_id, result_exists, save_result
-from idd_tc_mortality.distributions.base import FitResult
 from idd_tc_mortality.fit.fit_component import fit_one_component
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -148,24 +146,14 @@ def main(
             fold_tag, int(train_mask.sum()), len(train_mask),
         )
 
-    try:
-        result = fit_one_component(spec, df)
-    except Exception as exc:
+    result = fit_one_component(spec, df)
+    if not result.converged:
         logger.warning(
-            "Component %s (%s/%s) raised %s: %s — saving non-converged sentinel.",
+            "Component %s (%s/%s) did not converge: %s",
             spec_id,
             spec["component"],
             spec.get("family"),
-            type(exc).__name__,
-            exc,
-        )
-        result = FitResult(
-            params=np.array([]),
-            param_names=[],
-            fitted_values=np.array([]),
-            family=spec.get("family") or spec["component"],
-            converged=False,
-            meta={"error": str(exc), "error_type": type(exc).__name__},
+            result.meta.get("fit_error", "no error message"),
         )
 
     save_result(result, spec, output_dir, overwrite=overwrite)

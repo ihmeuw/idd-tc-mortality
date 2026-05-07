@@ -33,7 +33,8 @@ _S1_SPEC = {
     "component":          "s1",
     "covariate_combo":    _COMBO,
     "threshold_quantile": None,
-    "family":             None,
+    "family":             "cloglog",
+    "exposure_mode":      "offset",
 }
 
 _BULK_SPEC = {
@@ -41,6 +42,7 @@ _BULK_SPEC = {
     "covariate_combo":    _COMBO,
     "threshold_quantile": 0.75,
     "family":             "gamma",
+    "exposure_mode":      "free+weight",
 }
 
 
@@ -236,14 +238,14 @@ def test_corrupt_manifest_key_errors(runner, sample_df, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_fit_exception_saves_sentinel(runner, sample_df, tmp_path, monkeypatch):
-    """When fit_one_component raises, a sentinel result is saved and the CLI exits 0."""
-    from idd_tc_mortality.fit import run_component as rc_mod
+    """When the underlying fit raises, a sentinel result is saved and the CLI exits 0."""
+    import idd_tc_mortality.s1 as s1_mod
 
     manifest_path = tmp_path / "manifest.json"
     _write_manifest(manifest_path, [_S1_SPEC])
     cid = component_id(_S1_SPEC)
 
-    monkeypatch.setattr(rc_mod, "fit_one_component", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("simulated failure")))
+    monkeypatch.setattr(s1_mod, "fit", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("simulated failure")))
 
     result = runner.invoke(main, [
         "--spec-id",    cid,
@@ -258,13 +260,13 @@ def test_fit_exception_saves_sentinel(runner, sample_df, tmp_path, monkeypatch):
 
 def test_fit_exception_sentinel_has_converged_false(runner, sample_df, tmp_path, monkeypatch):
     """Sentinel result from a failed fit has converged=False."""
-    from idd_tc_mortality.fit import run_component as rc_mod
+    import idd_tc_mortality.s1 as s1_mod
 
     manifest_path = tmp_path / "manifest.json"
     _write_manifest(manifest_path, [_S1_SPEC])
     cid = component_id(_S1_SPEC)
 
-    monkeypatch.setattr(rc_mod, "fit_one_component", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("oops")))
+    monkeypatch.setattr(s1_mod, "fit", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("oops")))
 
     runner.invoke(main, [
         "--spec-id",    cid,
@@ -278,14 +280,14 @@ def test_fit_exception_sentinel_has_converged_false(runner, sample_df, tmp_path,
 
 
 def test_fit_exception_sentinel_has_error_meta(runner, sample_df, tmp_path, monkeypatch):
-    """Sentinel result carries error message and type in meta."""
-    from idd_tc_mortality.fit import run_component as rc_mod
+    """Sentinel result carries the error message in meta['fit_error']."""
+    import idd_tc_mortality.s1 as s1_mod
 
     manifest_path = tmp_path / "manifest.json"
     _write_manifest(manifest_path, [_S1_SPEC])
     cid = component_id(_S1_SPEC)
 
-    monkeypatch.setattr(rc_mod, "fit_one_component", lambda *a, **kw: (_ for _ in ()).throw(ValueError("bad input")))
+    monkeypatch.setattr(s1_mod, "fit", lambda *a, **kw: (_ for _ in ()).throw(ValueError("bad input")))
 
     runner.invoke(main, [
         "--spec-id",    cid,
@@ -295,19 +297,18 @@ def test_fit_exception_sentinel_has_error_meta(runner, sample_df, tmp_path, monk
     ])
 
     fit = load_result(cid, tmp_path)
-    assert fit.meta.get("error") == "bad input"
-    assert fit.meta.get("error_type") == "ValueError"
+    assert "bad input" in fit.meta["fit_error"]
 
 
-def test_fit_exception_sentinel_has_empty_params(runner, sample_df, tmp_path, monkeypatch):
-    """Sentinel result has empty params and fitted_values arrays."""
-    from idd_tc_mortality.fit import run_component as rc_mod
+def test_fit_exception_sentinel_has_nan_params(runner, sample_df, tmp_path, monkeypatch):
+    """Sentinel result has NaN params and the __failed__ sentinel name."""
+    import idd_tc_mortality.s1 as s1_mod
 
     manifest_path = tmp_path / "manifest.json"
     _write_manifest(manifest_path, [_S1_SPEC])
     cid = component_id(_S1_SPEC)
 
-    monkeypatch.setattr(rc_mod, "fit_one_component", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("crash")))
+    monkeypatch.setattr(s1_mod, "fit", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("crash")))
 
     runner.invoke(main, [
         "--spec-id",    cid,
@@ -317,6 +318,5 @@ def test_fit_exception_sentinel_has_empty_params(runner, sample_df, tmp_path, mo
     ])
 
     fit = load_result(cid, tmp_path)
-    assert len(fit.params) == 0
-    assert len(fit.fitted_values) == 0
-    assert fit.param_names == []
+    assert np.all(np.isnan(fit.params))
+    assert fit.param_names == ["__failed__"]

@@ -153,12 +153,27 @@ def _run_local(
 ) -> None:
     """Fit all specs sequentially in the current process."""
     n = len(specs)
+    failures: list[tuple[str, dict, str]] = []
     for i, spec in enumerate(specs, 1):
         cid = component_id(spec)
         logger.info("[%d/%d] Fitting %s (%s/%s)", i, n, cid, spec["component"], spec.get("family"))
         df_train = _subset_df_for_spec(spec, df, fold_df)
         result = fit_one_component(spec, df_train)
+        if not result.converged:
+            failures.append((cid, spec, result.meta.get("fit_error", "no error message")))
         save_result(result, spec, output_dir, overwrite=True)
+
+    n_failed = len(failures)
+    n_converged = n - n_failed
+    logger.info("Fit complete: %d/%d converged, %d non-converged.", n_converged, n, n_failed)
+    if failures:
+        logger.warning("Non-converged specs:")
+        for cid, spec, err in failures:
+            logger.warning(
+                "  %s  %s/%s  fold_tag=%s  -> %s",
+                cid, spec["component"], spec.get("family"),
+                spec.get("fold_tag", "is"), err,
+            )
 
 
 def _run_jobmon(

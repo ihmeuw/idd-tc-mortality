@@ -60,7 +60,7 @@ import pyarrow.parquet as pq
 
 SOURCE_CSV = Path(
     "/mnt/team/rapidresponse/pub/tropical-storms/data/ibtracs_deaths/"
-    "ibtracs_stage4b_pafs_admin0_with_deaths_sdi__island_20260417.csv"
+    "ibtracs_stage4b_pafs_admin0_with_deaths_sdi_island_20260420.csv"
 )
 
 OUTPUT_NODE = Path("/mnt/team/idd/pub/idd_tc_mortality/00-data")
@@ -194,8 +194,9 @@ def prepare(df: pd.DataFrame, level_filter: str = "all") -> pd.DataFrame:
         print(f"  TEMPORARY: took first basin for {multi_basin.sum():,} multi-basin rows")
 
     # --- Recode basin: NaN (empty string in CSV) -> 'NA' ---
-    # The CSV stores North Atlantic as empty string ''; with na_values=['']
-    # these arrive as NaN. We recode to the canonical 'NA' code.
+    # Some vintages store North Atlantic as literal 'NA' (preserved as string
+    # by keep_default_na=False); other vintages use empty cells which become
+    # NaN under na_values=['']. This fillna handles the latter case.
     n_missing_basin = df["basin"].isna().sum()
     if n_missing_basin:
         df["basin"] = df["basin"].fillna("NA")
@@ -269,7 +270,7 @@ def main(dry_run: bool = False, level_filter: str = "all") -> None:
         SOURCE_CSV,
         keep_default_na=False,   # critical: prevents 'NA' (North Atlantic) -> NaN
         na_values=[""],           # only blank cells become NaN
-        dtype={"basin": str},     # critical: force basin to str before any NA inference
+        dtype={"basins": str},    # critical: force basin to str before any NA inference (raw col name is 'basins')
     )
     print(f"  Raw rows: {len(df_raw):,}  columns: {len(df_raw.columns)}")
 

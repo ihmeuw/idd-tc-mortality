@@ -63,6 +63,16 @@ to a different optimizer (e.g. BFGS) that doesn't use IRLS.
 **Why:** OOS folds with extreme log_exposed values (~21.5 from 2.3B exposed) and small tail subsets reliably blow up gamma IRLS even with stable start_params. These failures are informative — that model/fold combination doesn't work — and should propagate to evaluation as missing/NA rather than aborting the whole workflow.
 **Revisit if:** Non-convergence rate is high enough to bias model selection (e.g. >10% of OOS folds for a given family are non-converged).
 
+## 2026-05-06: Always verify remote state with `git remote -v` before claiming a repo is unpushed/un-PR-able
+**Decision:** Before making any claim about a repo's GitHub/remote state, run `git remote -v` and `git ls-remote origin` directly. Never infer remote configuration from `git status` upstream messages alone.
+**Why:** This session lost an hour of unbacked-up work because Claude inferred from `git status` saying "Your branch is based on 'origin/master', but the upstream is gone" that there was no remote configured at all, and told the user "no remote to PR against." In fact, `origin → https://github.com/ihmeuw/idd-tc-mortality.git` was configured the entire time — only the upstream *branch* was gone. "Upstream branch is gone" and "remote does not exist" are different facts. Conflating them led to several hours of additional work being added on top of an unpushed initial commit.
+**Revisit if:** Git changes its `git status` messages to make the distinction unambiguous, or a different remote-inspection command becomes the canonical one.
+
+## 2026-05-06: Push to remote at session start when uncommitted/unpushed work exists
+**Decision:** At session start, if `git log` shows commits that are not on the remote (or no commits exist on remote), surface this immediately and offer to push. Do not begin substantive work on top of unpushed history without flagging it.
+**Why:** Same incident as above. Today's session began with zero commits; we made one large initial commit and then proceeded for ~3 hours of work (notebook rewrites, ingest, fit-code changes, smoke test) before realizing nothing was on GitHub. Even after the initial commit, the natural moment to push was missed because a wrong claim about remote state had been made earlier. Treating "is this code backed up?" as a first-class concern, surfaced loudly, prevents this.
+**Revisit if:** The repo moves to a workflow where local-only commits are deliberate (e.g. a private branch), in which case the rule should be conditional on branch name.
+
 ---
 
 ## 2026-04-14: Old-repo assessment — what to port and how
