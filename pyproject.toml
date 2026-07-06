@@ -3,10 +3,11 @@ name = "idd-tc-mortality"
 version = "0.1.0"
 description = "IDD tropical cyclone mortality pipeline"
 authors = ["Bobby Reiner"]
+readme = "README.md"
 packages = [{ include = "idd_tc_mortality", from = "src" }]
 
 [tool.poetry.dependencies]
-python = ">=3.11"
+python = ">=3.12,<4"
 numpy = "*"
 pandas = "*"
 statsmodels = "*"
@@ -17,6 +18,11 @@ matplotlib = "*"
 seaborn = "*"
 scikit-learn = "*"
 ipykernel = "^7.2.0"
+jobmon_installer_ihme = "==10.11.6"  # IHME Jobmon workflow installer — exact pin per STANDARDS.md §Environment
+xarray = "^2026.4.0"
+netCDF4 = "*"
+cartopy = "^0.25.0"
+idd-tools = {path = "/mnt/share/homes/bcreiner/repos/idd-tools", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
@@ -28,9 +34,39 @@ mypy = "*"
 run-validate = "idd_tc_mortality.step_00_validate.run_validate:main"
 run-fit-component = "idd_tc_mortality.fit.run_component:main"
 run-fit-orchestrate = "idd_tc_mortality.fit.orchestrate:main"
+run-build-refined-specs = "idd_tc_mortality.grid.build_refined_specs:main"
+run-build-refined-specs-post2000 = "idd_tc_mortality.grid.build_refined_specs_post2000:main"
 run-evaluate = "idd_tc_mortality.evaluate.run_evaluate:main"
 run-evaluate-orchestrate = "idd_tc_mortality.evaluate.run_evaluate_orchestrate:main"
+run-build-evaluate-tasks = "idd_tc_mortality.evaluate.build_evaluate_tasks:main"
+run-build-neighbor-tasks = "idd_tc_mortality.evaluate.build_neighbor_tasks:main"
+run-build-half-coupled-tasks = "idd_tc_mortality.evaluate.build_half_coupled_tasks:main"
+run-build-half-coupled-multiconfig-tasks = "idd_tc_mortality.evaluate.build_half_coupled_multiconfig_tasks:main"
+run-build-refined-cells = "idd_tc_mortality.evaluate.build_refined_cells:main"
 run-select = "idd_tc_mortality.select.run_select:main"
+run-predict-basin = "idd_tc_mortality.predict.predict_tc:main"
+run-predict-year-bin = "idd_tc_mortality.predict.predict_year_bin:main"
+run-aggregate-basin = "idd_tc_mortality.predict.aggregate_basin:main"
+run-aggregate-year-bin = "idd_tc_mortality.predict.aggregate_year_bin:main"
+run-aggregate-scenario = "idd_tc_mortality.predict.aggregate_scenario:main"
+run-aggregate-storm-draw = "idd_tc_mortality.predict.aggregate_storm_draw:main"
+run-predict-orchestrate = "idd_tc_mortality.predict.orchestrate:main"
+run-cleanup-aggregates = "idd_tc_mortality.predict.cleanup_aggregates:main"
+run-build-done-manifest = "idd_tc_mortality.predict.done_manifest:main"
+run-predict-postprocess = "idd_tc_mortality.predict.postprocess:main"
+run-aggregate-finalize = "idd_tc_mortality.predict.aggregate_finalize:main"
+run-build-predict-cells = "idd_tc_mortality.predict.build_predict_cells:main"
+run-predict-cell = "idd_tc_mortality.predict.predict_cell:main"
+run-predict-consolidated = "idd_tc_mortality.predict.orchestrate_consolidated:main"
+run-finalize-deliverable = "idd_tc_mortality.predict.finalize_deliverable:main"
+
+[[tool.poetry.source]]
+# IHME-internal artifactory — required for `jobmon_installer_ihme` and any
+# other internal-only deps. Public PyPI does not have these packages.
+# `supplemental` priority: poetry tries PyPI first, falls back here.
+name = "ihme"
+url = "https://artifactory.ihme.washington.edu/artifactory/api/pypi/pypi-shared/simple"
+priority = "supplemental"
 
 [build-system]
 requires = ["poetry-core"]
@@ -39,7 +75,8 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 src = ["src"]
+target-version = "py312"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 ignore_missing_imports = true
