@@ -40,10 +40,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from idd_tc_mortality.predict.consolidated import draw_level_blend
+from idd_tc_mortality.predict.consolidated import draw_level_blend, rollup_blend
 from idd_tc_mortality.predict.paths import (
     FHS_FUTURE_POP_PATH,
     FHS_PAST_POP_PATH,
+    STORM_DRAW_TABLE_PATH,
     atomic_write_parquet,
 )
 from idd_tc_mortality.predict.postprocess import (
@@ -85,6 +86,27 @@ def blend_export(a0_dir, a1_dir, hierarchy_df: pd.DataFrame, cell: str,
 # ---------------------------------------------------------------------------
 # (b) super-region median adjustment
 # ---------------------------------------------------------------------------
+
+def load_or_build_blend_summary(summary_path, a0_dir, a1_dir, hierarchy_df,
+                                storm_draw_table) -> pd.DataFrame:
+    """Read the blend summary, or build it from the a0/a1 partials if absent.
+
+    Step (b)'s predicted-median baseline needs the summarized (mean across storm
+    draws) A1/A0-blend at super-region level. That summary was previously produced
+    by a manual ``rollup_blend`` step; building it on demand here keeps
+    ``run-finalize-deliverable`` self-sufficient for a rerun (no paste-a-snippet gap).
+    """
+    summary_path = Path(summary_path)
+    if summary_path.exists():
+        return pd.read_parquet(summary_path)
+    logger.info("blend summary %s absent — building from a0/a1 partials", summary_path)
+    draw_ids = sorted(int(x) for x in pd.read_csv(storm_draw_table)["storm_draw"].unique())
+    summary, _ = rollup_blend(Path(a0_dir), Path(a1_dir), hierarchy_df, draw_ids)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_parquet(summary, summary_path)
+    logger.info("    wrote %s (%d rows)", summary_path, len(summary))
+    return summary
+
 
 def super_region_median_ratios(summary: pd.DataFrame, obs_by_loc: pd.DataFrame,
                                hierarchy_df: pd.DataFrame, cell: str,
@@ -240,7 +262,10 @@ def _csv(value: str) -> list[str]:
 @click.option("--out-dir", type=click.Path(path_type=Path), default=None,
               help="Where the 4 files are written. Default = blend dir.")
 @click.option("--summary-path", type=click.Path(path_type=Path), default=None,
-              help="Blend summary for the median ratios. Default <blend-dir>/summary.parquet.")
+              help="Blend summary for the median ratios. Default <blend-dir>/summary.parquet; "
+                   "built from the a0/a1 partials if absent.")
+@click.option("--storm-draw-table", default=STORM_DRAW_TABLE_PATH, show_default=True,
+              help="storm_draw_table.csv — draw ids used only when building a missing blend summary.")
 @click.option("--cell", default=DEFAULT_CELL, show_default=True, help="Toggle-cell column name.")
 @click.option("--scenarios", default=",".join(DEFAULT_SCENARIOS), show_default=True,
               help="Comma-separated SSP scenarios to keep.")
@@ -257,8 +282,8 @@ def _csv(value: str) -> list[str]:
 @click.option("--sr31-guard/--no-sr31-guard", default=False, show_default=True,
               help="Replace a 0 super-region ratio with 0.1 x smallest non-zero ratio. "
                    "Default (--no-sr31-guard) = what shipped 2026-06-24.")
-def main(pred_root, mid, a0_dir, a1_dir, blend_dir, out_dir, summary_path, cell,
-         scenarios, hierarchy_path, obs_path, past_pop_path, future_pop_path,
+def main(pred_root, mid, a0_dir, a1_dir, blend_dir, out_dir, summary_path, storm_draw_table,
+         cell, scenarios, hierarchy_path, obs_path, past_pop_path, future_pop_path,
          ref_scenarios, obs_year_start, obs_year_end, split_year, sr31_guard):
     a0_dir = a0_dir or pred_root / f"{mid}_a0"
     a1_dir = a1_dir or pred_root / f"{mid}_a1"
@@ -278,7 +303,8 @@ def main(pred_root, mid, a0_dir, a1_dir, blend_dir, out_dir, summary_path, cell,
                 unadj["year_id"].min(), unadj["year_id"].max())
 
     logger.info("(b) super-region median adjustment (guard=%s)", sr31_guard)
-    summary = pd.read_parquet(summary_path)
+    summary = load_or_build_blend_summary(summary_path, a0_dir, a1_dir, hierarchy_df,
+                                          storm_draw_table)
     amap = build_ancestor_map(hierarchy_df)
     obs = build_observed_deaths(str(obs_path), amap)
     ratios = super_region_median_ratios(summary, obs, hierarchy_df, cell,
