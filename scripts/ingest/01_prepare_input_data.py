@@ -12,6 +12,8 @@ What this does:
        year <= 2023            (exclude incomplete 2024 data)
        person_storm_hours >= 1 (drop zero/missing exposure)
        low_exposure_flag != 1 (drop impossible-data rows)
+       year >= --min-year      (optional)
+       no_wind_exposure False  (optional, see --drop-no-wind-exposure)
        level filter (see --level-filter)
   3. Recode missing basin values (NaN from empty strings in CSV) to 'NA'.
   4. Rename columns to match the new pipeline's schema:
@@ -161,6 +163,7 @@ def prepare(
     df: pd.DataFrame,
     level_filter: str = "all",
     min_year: int | None = None,
+    drop_no_wind_exposure: bool = False,
 ) -> pd.DataFrame:
     """Apply filters, recode, rename, cast, and select columns.
 
@@ -172,6 +175,9 @@ def prepare(
         'aggregate' — keep only level-4/5 rows, aggregate to level-3
     min_year : int or None
         If set, drop rows with year < min_year.
+    drop_no_wind_exposure : bool
+        If True, keep only rows where no_wind_exposure is False (column
+        introduced in the PSH_20260711 source CSV).
     """
     # --- Year and exposure filters (always applied) ---
     mask = (
@@ -181,6 +187,16 @@ def prepare(
     )
     if min_year is not None:
         mask &= (df["year"] >= min_year)
+    if drop_no_wind_exposure:
+        if df["no_wind_exposure"].dtype != bool:
+            raise ValueError(
+                f"no_wind_exposure parsed as {df['no_wind_exposure'].dtype}, "
+                "expected bool — a missing/non-boolean value in the source CSV "
+                "would filter silently wrong; investigate before ingesting."
+            )
+        n_flagged = int(df["no_wind_exposure"].sum())
+        mask &= ~df["no_wind_exposure"]
+        print(f"  no_wind_exposure filter: dropping {n_flagged:,} flagged rows")
     df = df.loc[mask].copy()
     print(f"  After year/exposure filters: {len(df):,} rows")
 
@@ -280,6 +296,7 @@ def main(
     min_year: int | None = None,
     source_csv: Path = DEFAULT_SOURCE_CSV,
     vintage: str | None = None,
+    drop_no_wind_exposure: bool = False,
 ) -> None:
     if not source_csv.exists():
         print(f"ERROR: source CSV not found: {source_csv}", file=sys.stderr)
@@ -304,7 +321,12 @@ def main(
     print(f"  Raw rows: {len(df_raw):,}  columns: {len(df_raw.columns)}")
 
     print("Applying filters and preparing...")
-    df_out = prepare(df_raw, level_filter=level_filter, min_year=min_year)
+    df_out = prepare(
+        df_raw,
+        level_filter=level_filter,
+        min_year=min_year,
+        drop_no_wind_exposure=drop_no_wind_exposure,
+    )
     print(f"  Output rows: {len(df_out):,}  columns: {len(df_out.columns)}")
 
     print()
@@ -364,6 +386,14 @@ if __name__ == "__main__":
             "20260715_v2 for a same-day rerun). Default: today's date."
         ),
     )
+    parser.add_argument(
+        "--drop-no-wind-exposure",
+        action="store_true",
+        help=(
+            "Keep only rows where no_wind_exposure is False (column introduced "
+            "in the PSH_20260711 source CSV; errors if it parses non-boolean)."
+        ),
+    )
     args = parser.parse_args()
     main(
         dry_run=args.dry_run,
@@ -371,4 +401,5 @@ if __name__ == "__main__":
         min_year=args.min_year,
         source_csv=args.source_csv,
         vintage=args.vintage,
+        drop_no_wind_exposure=args.drop_no_wind_exposure,
     )
