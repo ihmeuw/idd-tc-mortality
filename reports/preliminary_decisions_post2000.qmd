@@ -1,0 +1,432 @@
+---
+title: "DH Preliminary Model Diagnostics — post-2000 subset"
+subtitle: "Family / exposure_mode decisions from the 2026-05-17 evaluate run (20260517)"
+author: "Bobby Reiner"
+date: "2026-05-17"
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    fig-width: 12
+    fig-height: 5
+    number-sections: true
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+## Scope
+
+This report records the screening decisions made on the 2026-05-17 preliminary
+double-hurdle (DH) evaluate run, refit on the **post-2000 subset** of the
+EM-DAT cyclone mortality data (1,693 storm × admin rows, 2000–2021). The
+all-years cycle (2026-05-07) is preserved as the audit record at
+`reports/preliminary_decisions.qmd`; this fork records the decisions made on
+the post-2000 data with two methodological changes.
+
+**Why this cycle exists.** EM-DAT documents incomplete pre-2000 death
+reporting; reporting completeness is plausibly SDI-correlated, which would
+bias the SDI-mortality relationship — the suspected mechanistic cause of the
+~30× low-SDI overprediction surfaced in 2026-05-16 predict-stage diagnostics.
+Refitting on data with consistent reporting removes that bias source.
+
+**The job remains the same:** discard families and exposure modes that
+clearly cannot win, so that the downstream selection step works against a
+narrower, more defensible grid. Five decision axes per stage: **family**,
+**exposure_mode**, **covariate set**, **threshold_quantile**, and
+(implicitly) the data / fold structure. We work through them stage by stage:
+
+1. **S1** — `P(deaths >= 1)` — threshold-independent.
+2. **S2** — `P(rate >= threshold | deaths >= 1)` — threshold-dependent.
+3. **Bulk** — `E[rate | deaths >= 1, rate < threshold]` — threshold-dependent.
+4. **Tail** — `E[rate | deaths >= 1, rate >= threshold]` — threshold-dependent.
+5. **Threshold** — **deferred** to the intermediate-survivors analysis once
+   per-storm predictions are loaded. The threshold question is best answered
+   on calibration metrics that aren't dominated by 1-2 mega-events; that
+   needs storm-level rather than config-level data.
+
+### Calibration gate — asymmetric, not symmetric
+
+The all-years cycle used `full_pred_obs_ratio_oos ∈ [0.9, 1.1]`. This cycle
+**relaxes** the gate to `[0.1, 1.5]` for physically defensible reasons:
+
+The death distribution in this dataset is dominated by a handful of mega-
+events (Nargis 2008 alone is ~138K of the ~210K total deaths; the next few
+are Haiyan 2013, Sidr 2007). A well-specified mortality model with a
+threshold-aware tail will *honestly under-predict* those mega-events — they
+live in the extreme upper tail and a 22-year window doesn't pin the mean
+down. So `total_pred / total_obs < 1` is the **expected, correct** result.
+
+A ratio of exactly 1.0 implies the model has *compensated* by
+over-predicting the bulk-of-storms to cover the under-predicted mega-events.
+That's worse than honest under-prediction — it's systematic per-storm bias
+that happens to average to zero. The old `[0.9, 1.1]` gate was selecting
+*for* this failure mode.
+
+The new gate is asymmetric: **under-prediction up to 10× is allowed** (lower
+bound 0.1, reflects mega-event honesty), but **over-prediction is capped at
+1.5×** (compensating-overprediction failure mode). Per-stage heatmaps below
+operate on the configs that pass this asymmetric gate.
+
+### Time-series calibration metrics — computed, but not gates
+
+Three new metrics are computed alongside the existing per-stage metrics:
+`cor_ts_oos` (year-aggregate correlation between observed and predicted
+deaths), `beta_p_ts_oos` (OLS slope), `beta_0_ts_oos` (OLS intercept). The
+intent was to use them as screening gates. On this dataset they aren't
+usable as gates: year-to-year variability in deaths is dominated by *which
+years got a mega-event*, which is not encoded in the storm-level features
+the model has access to. The achievable `cor_ts_oos` ceiling across all
+configs is ~0.44 — a property of the data/model-family match, not of any
+specific config's quality. The metrics appear in the survivors notebook as
+horror-spotters, not as filters.
+
+Each section below shows the one or two plots that drove the call, the
+observations they support, and the locked-in decision.
+
+```{python}
+#| label: setup
+import sys
+from pathlib import Path
+
+# Make the local helper module importable regardless of where Quarto runs from.
+sys.path.insert(0, str(Path(__file__).resolve().parent if "__file__" in dir() else Path(".").resolve()))
+import _helpers as H
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+ROOT      = Path("/mnt/team/idd/pub/idd_tc_mortality")
+EVAL_DATE = "20260517"
+RESULTS_PATH = ROOT / "02-evaluate" / EVAL_DATE / "dh_results.parquet"
+
+df_all = H.load_and_aggregate(RESULTS_PATH)
+
+# Asymmetric calibration gate: under-prediction (mega-event honesty) allowed
+# down to 10× under; over-prediction (compensating bulk overprediction) capped
+# tighter at 1.5×. See §Scope for the physics rationale.
+RATIO_BOUNDS = (0.1, 1.5)
+ratio      = df_all["full_pred_obs_ratio_oos"]
+calibrated = ratio.between(*RATIO_BOUNDS) & ratio.notna()
+df = df_all[calibrated].reset_index(drop=True)
+print(f"{len(df):,} configs ({len(df)/len(df_all):.1%}) pass "
+      f"full_pred_obs_ratio_oos in [{RATIO_BOUNDS[0]}, {RATIO_BOUNDS[1]}]")
+
+# Per-stage deduplicated frames (calibrated subset).
+s1_df   = H.dedup_for_stage(df, "s1")
+s2_df   = H.dedup_for_stage(df, "s2")
+bulk_df = H.dedup_for_stage(df, "bulk")
+tail_df = H.dedup_for_stage(df, "tail")
+```
+
+## S1 — `P(deaths >= 1)`
+
+S1 is fit on the full dataset. Its outcome (`any_death`) does not depend on
+`threshold_quantile`, so the same `(s1_family, s1_exposure_mode, s1_cov)`
+spec produces identical metrics across every DH configuration that uses it.
+Two structural choices to make:
+
+- **family**: `logit` or `cloglog`.
+- **exposure_mode**: how `log_exposed` enters the linear predictor.
+  - `excluded` — drop log_exposed.
+  - `free`     — include with a freely estimated coefficient.
+  - `offset`   — include with coefficient locked at 1 (cloglog only;
+    corresponds to the proportional-hazards / Poisson-process derivation
+    of cloglog).
+
+We deduplicate to one row per S1 spec and look at the best AUROC achievable in
+each `(family, exposure_mode)` cell.
+
+```{python}
+#| label: s1-heatmap
+#| fig-cap: "S1 — best `s1_auroc_oos` (out of 16 covariate combinations) per (family × exposure_mode) cell. Higher = better. The `logit / offset` cell is empty by design — `offset` is only valid with `cloglog`."
+H.plot_stage_heatmap(s1_df, "s1", "s1_auroc_oos",
+                     lower_better=False, log_scale=False,
+                     facet_by_threshold=False)
+plt.show()
+```
+
+**What we saw:**
+
+- `cloglog × free` and `logit × free` are tied at 0.785 AUROC (Brier
+  values agree to within ~0.001 as well). Identical ordering of fitted
+  probabilities → identical AUROC, and the MLE pins the fitted-probability
+  surface to nearly the same values for the two links when the data sits
+  in moderate-p range. So the family choice carries no information here.
+- `cloglog × offset` collapses to 0.58 AUROC. The offset locks the
+  log_exposed slope at 1, which is the wrong empirical slope (we expect
+  more-exposed populations to have a *sub*-1 slope on per-person rate),
+  so the model is forced into a misspecification it cannot escape.
+- `excluded` (no exposure information at all) sits at 0.72 — better than
+  `offset` but well below `free`, confirming that exposure information
+  carries real signal when used correctly.
+
+::: {.callout-tip title="Decision — S1"}
+**`s1_family = logit`, `s1_exposure_mode = free`.**
+
+Drop `cloglog` (identical metrics, less canonical link, harder small-sample
+behavior — we'd only keep it for the proportional-hazards interpretation,
+which doesn't survive once we move off `offset`). Drop `excluded` and
+`offset`.
+
+Uncertainty propagation works identically for both links — both fit via
+`sm.GLM`, both expose `cov_params()` for joint-coefficient sampling — so
+that is not a discriminator.
+:::
+
+## S2 — `P(rate >= threshold | deaths >= 1)`
+
+S2's outcome IS threshold-dependent: the binary label `rate >= threshold`
+shifts as `threshold_quantile` moves. We deduplicate per
+`(s2_family, s2_exposure_mode, s2_cov, threshold_quantile)` and look at
+each threshold separately. Same family/exposure_mode question as S1.
+
+```{python}
+#| label: s2-heatmap
+#| fig-cap: "S2 — best `s2_auroc_oos` per (family × exposure_mode) cell, faceted by threshold. The free / excluded contrast is the dominant signal at every threshold."
+#| fig-width: 14
+#| fig-height: 6
+H.plot_stage_heatmap(s2_df, "s2", "s2_auroc_oos",
+                     lower_better=False, log_scale=False,
+                     facet_by_threshold=True)
+plt.show()
+```
+
+**What we saw:**
+
+- `logit` and `cloglog` agree to within ~0.001 AUROC in every comparable
+  cell across all thresholds — same identifiability story as S1.
+- `free` dominates `excluded` everywhere, with a widening gap at higher
+  thresholds (0.92 vs 0.71 at threshold = 0.80; 0.96 vs 0.80 at 0.95).
+
+::: {.callout-tip title="Decision — S2"}
+**`s2_family = logit`, `s2_exposure_mode = free`** at every threshold.
+
+Drop `cloglog` and `excluded`. Same reasoning as S1, applied across all
+thresholds.
+:::
+
+## Bulk — `E[rate | deaths >= 1, rate < threshold]`
+
+Bulk has six candidate families: `beta`, `gamma`, `lognormal`,
+`scaled_logit`, `nb`, `poisson`. Three of them (`beta`, `scaled_logit`,
+`truncated_normal` — though truncated_normal is bulk-eligible only in
+limited form) enforce the bound `predicted_rate < threshold` by
+construction. The other rate families (`gamma`, `lognormal`) and the
+count families (`nb`, `poisson`) can predict rates above threshold,
+extrapolating outside the bulk training support.
+
+Bulk is doubly threshold-dependent: the training set changes with
+threshold, *and* absolute-error metrics (`mae_rate`, `rmse_rate`,
+`mae_count`) shift in scale across thresholds. So we read MAE/RMSE
+*within* a threshold, not across, and use rank-based comparisons for
+cross-threshold consistency.
+
+### Family choice
+
+```{python}
+#| label: bulk-family-exposure-heatmap
+#| fig-cap: "Bulk — best `bulk_mae_rate_oos` per (family × exposure_mode) cell, faceted by threshold. Lower is better. Same-threshold rows are directly comparable; absolute values are not comparable across thresholds. `beta` and `scaled_logit` are tied for best in nearly every threshold."
+#| fig-width: 14
+#| fig-height: 8
+H.plot_stage_heatmap(bulk_df, "bulk", "bulk_mae_rate_oos",
+                     lower_better=True, log_scale=True,
+                     facet_by_threshold=True)
+plt.show()
+```
+
+**Cross-threshold rank stability.** A natural worry: maybe the right
+bulk family at threshold = 0.80 is different from threshold = 0.95.
+We check by computing the Kendall τ between the rankings at each pair
+of thresholds — high τ means the same configurations win regardless
+of threshold.
+
+```{python}
+#| label: bulk-kendall
+#| fig-cap: "Cross-threshold Kendall τ between configuration rankings, one panel per metric. Adjacent thresholds agree at τ > 0.85 in every metric, and τ ≥ 0.5 even between the most distant thresholds (0.70 vs 0.95). Rankings are stable enough that the family decision transfers across thresholds."
+#| fig-width: 18
+#| fig-height: 4
+BULK_METRICS = [
+    "bulk_mae_rate_oos", "bulk_rmse_rate_oos", "bulk_cor_rate_oos",
+    "bulk_mae_count_oos", "bulk_cor_count_oos",
+]
+BULK_DIR = {
+    "bulk_mae_rate_oos":  "lower",
+    "bulk_rmse_rate_oos": "lower",
+    "bulk_cor_rate_oos":  "higher",
+    "bulk_mae_count_oos": "lower",
+    "bulk_cor_count_oos": "higher",
+}
+H.kendall_threshold_heatmap(bulk_df, "bulk", BULK_METRICS,
+                            metric_directions=BULK_DIR)
+plt.show()
+```
+
+**What we saw:**
+
+- `scaled_logit` anchors the lowest-MAE cells at every threshold, with
+  a clear gap over `beta` that **widens with threshold** (~14% lower MAE
+  at q=0.70, ~25% at q=0.85, ~38% at q=0.95). On the all-years data
+  these two families were tied; on the post-2000 data scaled_logit
+  pulls clear.
+- `gamma` and `lognormal` are competitive at low thresholds but drift
+  toward higher MAE as threshold rises, consistent with their lack of
+  upper-bound enforcement.
+- `nb` and `poisson` (the count-bulk families) live in the offset-only
+  column and are worse than the rate families at every threshold.
+- The Kendall τ matrix shows τ ≥ 0.62 between any pair of adjacent
+  thresholds on `bulk_mae_rate_oos` and ≥ 0.66 on `bulk_cor_rate_oos`,
+  so the family decision transfers across thresholds.
+
+::: {.callout-tip title="Decision — Bulk family"}
+**`bulk_family = scaled_logit`** (single family this cycle, vs the
+all-years `{beta, scaled_logit}` pair).
+
+Drop `beta`, `gamma`, `lognormal`, `nb`, `poisson`. Both surviving
+bounded-rate families (`beta`, `scaled_logit`) enforce
+`predicted_rate ∈ (0, threshold)` by construction, so the structural
+argument applies to both — the decision to narrow to one is purely
+empirical, driven by the size and consistency of `scaled_logit`'s MAE
+advantage on this dataset.
+:::
+
+### Exposure mode
+
+Restricting to `scaled_logit`, we re-examine the `exposure_mode` ×
+covariate plane. Rate-bulk families have four exposure modes available:
+`excluded`, `free`, `free+weight`, `weight`.
+
+```{python}
+#| label: bulk-focus-heatmap
+#| fig-cap: "Bulk family × exposure_mode heatmap restricted to `scaled_logit`. `free` and `free+weight` dominate at every threshold."
+#| fig-width: 14
+#| fig-height: 5
+bulk_focus_df = bulk_df[bulk_df["bulk_family"].isin(["scaled_logit"])].copy()
+H.plot_stage_heatmap(bulk_focus_df, "bulk", "bulk_mae_rate_oos",
+                     lower_better=True, log_scale=True,
+                     facet_by_threshold=True)
+plt.show()
+```
+
+**What we saw:**
+
+- `free` is consistently the lowest-MAE cell at every threshold.
+- `free+weight` is within ~5-10% of `free` everywhere.
+- `excluded` (no exposure term) and `weight` (population weights only,
+  no slope on `log_exposed`) are ~25-40% worse at every threshold.
+- The pattern matches S1 / S2: there IS exposure information, dropping
+  it or fixing its slope hurts. `free` lets the data choose the slope;
+  `free+weight` adds population weighting on top.
+
+::: {.callout-tip title="Decision — Bulk exposure mode"}
+**`bulk_exposure_mode ∈ {free, free+weight}`**.
+
+Drop `excluded` and `weight`. Both surviving modes are kept open
+because the choice between them is downstream — they produce similar
+rankings, and the call between weighted and unweighted IRLS is a
+calibration question, not a screening one.
+:::
+
+## Tail — `E[rate | deaths >= 1, rate >= threshold]`
+
+Tail has more candidate families (eight: `gamma`, `gpd`, `log_logistic`,
+`lognormal`, `nb`, `poisson`, `truncated_normal`, `weibull`) and a noisier
+ranking story than bulk. The cross-threshold Kendall τ heatmap drops
+into the 0.4–0.5 range for adjacent thresholds in count metrics — there
+is more shuffling here than in bulk. The cleanest framing for the
+screening question is therefore not "what's best on average" but
+"which families have *any* covariate / exposure_mode combination that
+reaches the top 10 anywhere?"
+
+```{python}
+#| label: tail-attainability
+#| fig-cap: "Tail family attainability: per family, the *best* rank achieved across covariate × exposure_mode choices, at every (metric × threshold) cell. Green = the family has a config that reaches top 10 in that cell. Red = it doesn't anywhere it appears, regardless of covariate or exposure_mode. Discrete color bins (1–4 / 5–10 / 11–20 / 21–40 / >40) make top-10 attainability a one-look read."
+#| fig-width: 16
+#| fig-height: 5
+TAIL_METRICS = [
+    "tail_mae_rate_oos", "tail_rmse_rate_oos", "tail_cor_rate_oos",
+    "tail_mae_count_oos", "tail_cor_count_oos",
+]
+TAIL_DIR = {
+    "tail_mae_rate_oos":  "lower",
+    "tail_rmse_rate_oos": "lower",
+    "tail_cor_rate_oos":  "higher",
+    "tail_mae_count_oos": "lower",
+    "tail_cor_count_oos": "higher",
+}
+H.family_attainability_heatmap(tail_df, "tail", TAIL_METRICS,
+                               metric_directions=TAIL_DIR,
+                               top_n=10, drop_threshold=20)
+plt.show()
+```
+
+**What we saw:**
+
+- `nb` and `poisson` are uniformly red. Their best-rank-achievable is
+  > 20 in nearly every (metric × threshold) cell — and structurally
+  they are the wrong tool: count GLMs have no threshold awareness, so
+  their predicted rates can land below threshold (a contradiction
+  with the conditional eval set `rate >= threshold`).
+- `gpd`, `log_logistic`, `lognormal`, `truncated_normal` reach top-10
+  in nearly every cell. They are the families that fit on
+  `excess_rate = rate - threshold` (or, for `truncated_normal`, on
+  log-rate with a lower truncation at log(threshold)) — both
+  formulations enforce `predicted_rate >= threshold` by construction.
+- `gamma` is mixed: rank 2–4 on rate metrics at low thresholds but
+  rank 32–45 in MAE-count cells. Ceiling is high but the failure mode
+  is broad enough to flag.
+- `weibull` never breaks top 10 in some cells but never goes truly bad
+  (worst best-rank is 16). On the bubble.
+
+::: {.callout-tip title="Decision — Tail"}
+**Drop `nb` and `poisson`.** Tentatively keep `gpd`, `log_logistic`,
+`lognormal`, `truncated_normal`, `weibull`, `gamma` — but flag
+**`gamma` and `weibull` as suspicious** pending closer look in the next
+iteration.
+
+Same structural argument as bulk: the families that enforce the
+conditional support (`predicted_rate >= threshold`) by construction
+are precisely the ones that cluster at the top of the rankings.
+:::
+
+## Threshold — deferred
+
+Threshold selection is **not** locked in this report. Per §Scope, the
+threshold question is best answered on storm-level rather than config-level
+data, which is computed in the intermediate-survivors stage. The
+preliminary screen above culls the 73,054 calibrated → 583 surviving DH
+configurations across all six thresholds (0.70 through 0.95). Those 583
+survivors carry their threshold attribute through to the intermediate
+notebook, where:
+
+- Per-storm predicted vs observed scatter plots inform which thresholds
+  produce models that actually track storm-level severity.
+- A **drop-top-N** trimmed `fwd_pred_obs_ratio` filter (see DECISIONS
+  2026-05-17 — "Calibration metric for Nargis-dominated data") removes the
+  mega-event-domination effect and exposes bulk-of-storms calibration.
+- Coverage trajectories on the per-storm pool replace the
+  `full_coverage_rate_L_oos` panel.
+
+The threshold decision then falls out of the storm-level evidence, not from
+config-level summary statistics on a Nargis-dominated aggregate.
+
+## Decision summary
+
+| Stage     | Family kept                                                                | Exposure mode kept    | Notes                                                                  |
+|-----------|----------------------------------------------------------------------------|-----------------------|------------------------------------------------------------------------|
+| S1        | `logit`                                                                    | `free`                | logit & cloglog identical (~0.795 AUROC); offset misspecified         |
+| S2        | `logit`                                                                    | `free`                | log_exposed alone explains most discrimination; gap widens with threshold |
+| Bulk      | `scaled_logit`                                                             | `free`, `free+weight` | beta dropped this cycle — scaled_logit wins clearly on post-2000 data  |
+| Tail      | `gpd`, `log_logistic`, `lognormal`, `truncated_normal`, `gamma`, `weibull` | open                  | drop `nb` and `poisson`; gamma / weibull / truncated_normal suspicious |
+| Threshold | **deferred**                                                               | —                     | Decided in intermediate-survivors notebook with per-storm predictions  |
+
+Each entry above is logged as a discrete decision in `.claude/DECISIONS.md`
+with revisit conditions. The asymmetric calibration gate
+(`full_pred_obs_ratio_oos ∈ [0.1, 1.5]`) is logged as a 2026-05-17
+decision; the bulk-family narrowing to `scaled_logit` is a deliberate
+divergence from the all-years cycle and is logged as such.

@@ -1,0 +1,9 @@
+{
+  "_source": "preliminary screening (notebooks/dh_preliminary_diagnostics.ipynb) on 02-evaluate/20260608_refit, 2026-06-09",
+  "_note": "Per-stage family + exposure_mode allow-lists. A spec is kept iff its family AND exposure_mode are both listed for its stage. All 6 thresholds and all 3 covariate sets are retained. Drives `run-evaluate-orchestrate --survivors`.",
+  "s1":   {"families": ["logit"],        "exposure_modes": ["free"]},
+  "s2":   {"families": ["logit"],        "exposure_modes": ["free"]},
+  "bulk": {"families": ["scaled_logit"], "exposure_modes": ["free", "free+weight"]},
+  "tail": {"families": ["gpd", "log_logistic", "lognormal", "truncated_normal", "gamma", "weibull"],
+           "exposure_modes": ["free", "weight", "free+weight", "excluded"]}
+}

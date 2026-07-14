@@ -9,12 +9,13 @@ What this does:
      the old idd-climate-models pipeline (keep_default_na=False, NA-safe).
   2. Apply filters:
        year <= 2023            (exclude incomplete 2024 data)
-       exposed_population >= 1 (drop zero/missing exposure)
+       person_storm_hours >= 1 (drop zero/missing exposure)
+       low_exposure_flag != 1 (drop impossible-data rows)
        level filter (see --level-filter)
   3. Recode missing basin values (NaN from empty strings in CSV) to 'NA'.
   4. Rename columns to match the new pipeline's schema:
        total_deaths       -> deaths
-       exposed_population -> exposed
+       person_storm_hours -> exposed
        max_wind_speed     -> wind_speed
   5. Select and cast to explicit dtypes; drop all other columns.
   6. Write atomically to:
@@ -60,8 +61,9 @@ import pyarrow.parquet as pq
 
 SOURCE_CSV = Path(
     "/mnt/team/rapidresponse/pub/tropical-storms/data/ibtracs_deaths/"
-    "ibtracs_stage4b_pafs_admin0_with_deaths_sdi_island_20260420.csv"
+    "ibtracs_stage4b_pafs_admin0_with_deaths_PSH_20260603_sdi_isisland.csv"
 )
+
 
 OUTPUT_NODE = Path("/mnt/team/idd/pub/idd_tc_mortality/00-data")
 
@@ -78,9 +80,9 @@ FILTER_MIN_EXPOSED = 1     # drop rows with zero or missing exposure
 
 RENAMES = {
     "total_deaths":       "deaths",
-    "exposed_population": "exposed",
+    "person_storm_hours": "exposed",
     "max_wind_speed":     "wind_speed",
-    "basins":             "basin",
+    "basins_standard":    "basin",
 }
 
 # Columns to keep (after renaming) with target dtypes.
@@ -112,13 +114,13 @@ def _aggregate_subnationals(df_sub: pd.DataFrame) -> pd.DataFrame:
     """Aggregate level-4/5 rows up to level-3 using exposure weighting.
 
     Groups by (storm_id, level3_id). Within each group:
-    - total_deaths, exposed_population: summed
+    - total_deaths, person_storm_hours: summed
     - max_wind_speed, sdi: exposure-weighted means
     - basin, is_island, year, location_name, super_region_name, region_name: first value
     - location_id: level-3 ID extracted from path_to_top_parent[3]
     - path_to_top_parent: first 4 path elements (the level-3 path)
 
-    All rows are assumed to have exposed_population >= 1 (pre-filtered).
+    All rows are assumed to have person_storm_hours >= 1 (pre-filtered).
     """
     df_sub = df_sub.copy()
     parts = df_sub["path_to_top_parent"].str.split(",")
@@ -127,12 +129,12 @@ def _aggregate_subnationals(df_sub: pd.DataFrame) -> pd.DataFrame:
 
     agg_rows = []
     for (storm_id, level3_id), grp in df_sub.groupby(["storm_id", "_level3_id"]):
-        exp = grp["exposed_population"].values
+        exp = grp["person_storm_hours"].values
         total_exp = float(exp.sum())
         w = exp / total_exp
         agg_rows.append({
             "total_deaths":       int(grp["total_deaths"].sum()),
-            "exposed_population": total_exp,
+            "person_storm_hours": total_exp,
             "max_wind_speed":     float((grp["max_wind_speed"].values * w).sum()),
             "sdi":                float((grp["sdi"].values * w).sum()),
             "basin":              grp["basin"].iloc[0],
@@ -152,7 +154,11 @@ def _aggregate_subnationals(df_sub: pd.DataFrame) -> pd.DataFrame:
 # Core logic
 # ---------------------------------------------------------------------------
 
-def prepare(df: pd.DataFrame, level_filter: str = "all") -> pd.DataFrame:
+def prepare(
+    df: pd.DataFrame,
+    level_filter: str = "all",
+    min_year: int | None = None,
+) -> pd.DataFrame:
     """Apply filters, recode, rename, cast, and select columns.
 
     Parameters
@@ -161,12 +167,17 @@ def prepare(df: pd.DataFrame, level_filter: str = "all") -> pd.DataFrame:
         'all'       — use all admin levels (default)
         'level3'    — keep only level-3 (national) rows
         'aggregate' — keep only level-4/5 rows, aggregate to level-3
+    min_year : int or None
+        If set, drop rows with year < min_year.
     """
     # --- Year and exposure filters (always applied) ---
     mask = (
         (df["year"] <= FILTER_MAX_YEAR)
-        & (df["exposed_population"] >= FILTER_MIN_EXPOSED)
+        & (df["person_storm_hours"] >= FILTER_MIN_EXPOSED)
+        & (df["low_exposure_flag"] != 1)
     )
+    if min_year is not None:
+        mask &= (df["year"] >= min_year)
     df = df.loc[mask].copy()
     print(f"  After year/exposure filters: {len(df):,} rows")
 
@@ -254,7 +265,11 @@ def write_versioned(df: pd.DataFrame, output_node: Path) -> Path:
 # Main
 # ---------------------------------------------------------------------------
 
-def main(dry_run: bool = False, level_filter: str = "all") -> None:
+def main(
+    dry_run: bool = False,
+    level_filter: str = "all",
+    min_year: int | None = None,
+) -> None:
     if not SOURCE_CSV.exists():
         print(f"ERROR: source CSV not found: {SOURCE_CSV}", file=sys.stderr)
         sys.exit(1)
@@ -262,6 +277,8 @@ def main(dry_run: bool = False, level_filter: str = "all") -> None:
     print(f"Source: {SOURCE_CSV}")
     print(f"Output node: {OUTPUT_NODE}")
     print(f"Level filter: {level_filter}")
+    if min_year is not None:
+        print(f"Min year: {min_year}")
     print()
 
     # Read with NA-safe settings (identical to old idd-climate-models data.py)
@@ -270,12 +287,12 @@ def main(dry_run: bool = False, level_filter: str = "all") -> None:
         SOURCE_CSV,
         keep_default_na=False,   # critical: prevents 'NA' (North Atlantic) -> NaN
         na_values=[""],           # only blank cells become NaN
-        dtype={"basins": str},    # critical: force basin to str before any NA inference (raw col name is 'basins')
+        dtype={"basins_standard": str},    # critical: force basin to str before any NA inference
     )
     print(f"  Raw rows: {len(df_raw):,}  columns: {len(df_raw.columns)}")
 
     print("Applying filters and preparing...")
-    df_out = prepare(df_raw, level_filter=level_filter)
+    df_out = prepare(df_raw, level_filter=level_filter, min_year=min_year)
     print(f"  Output rows: {len(df_out):,}  columns: {len(df_out.columns)}")
 
     print()
@@ -315,5 +332,15 @@ if __name__ == "__main__":
             "'aggregate': aggregate level-4/5 rows to level-3 using exposure weighting."
         ),
     )
+    parser.add_argument(
+        "--min-year",
+        type=int,
+        default=None,
+        help="If set, drop rows with year < MIN_YEAR (e.g. 2000).",
+    )
     args = parser.parse_args()
-    main(dry_run=args.dry_run, level_filter=args.level_filter)
+    main(
+        dry_run=args.dry_run,
+        level_filter=args.level_filter,
+        min_year=args.min_year,
+    )

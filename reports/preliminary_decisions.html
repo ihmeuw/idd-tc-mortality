@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.37">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Bobby Reiner">
+<meta name="dcterms.date" content="2026-05-08">
+
+<title>DH Preliminary Model Diagnostics</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="preliminary_decisions_files/libs/clipboard/clipboard.min.js"></script>
+<script src="preliminary_decisions_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="preliminary_decisions_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="preliminary_decisions_files/libs/quarto-html/popper.min.js"></script>
+<script src="preliminary_decisions_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="preliminary_decisions_files/libs/quarto-html/anchor.min.js"></script>
+<link href="preliminary_decisions_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="preliminary_decisions_files/libs/quarto-html/quarto-syntax-highlighting-7f8f88aac4f3542376d5c11b86a4c14d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="preliminary_decisions_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="preliminary_decisions_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="preliminary_decisions_files/libs/bootstrap/bootstrap-eb081c6c9a720a77ff2cb925aa72e105.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article toc-left">
+<div id="quarto-sidebar-toc-left" class="sidebar toc-left">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul class="collapse">
+  <li><a href="#scope" id="toc-scope" class="nav-link active" data-scroll-target="#scope"><span class="header-section-number">1</span> Scope</a></li>
+  <li><a href="#s1-pdeaths-1" id="toc-s1-pdeaths-1" class="nav-link" data-scroll-target="#s1-pdeaths-1"><span class="header-section-number">2</span> S1 — <code>P(deaths &gt;= 1)</code></a></li>
+  <li><a href="#s2-prate-threshold-deaths-1" id="toc-s2-prate-threshold-deaths-1" class="nav-link" data-scroll-target="#s2-prate-threshold-deaths-1"><span class="header-section-number">3</span> S2 — <code>P(rate &gt;= threshold | deaths &gt;= 1)</code></a></li>
+  <li><a href="#bulk-erate-deaths-1-rate-threshold" id="toc-bulk-erate-deaths-1-rate-threshold" class="nav-link" data-scroll-target="#bulk-erate-deaths-1-rate-threshold"><span class="header-section-number">4</span> Bulk — <code>E[rate | deaths &gt;= 1, rate &lt; threshold]</code></a></li>
+  <li><a href="#tail-erate-deaths-1-rate-threshold" id="toc-tail-erate-deaths-1-rate-threshold" class="nav-link" data-scroll-target="#tail-erate-deaths-1-rate-threshold"><span class="header-section-number">5</span> Tail — <code>E[rate | deaths &gt;= 1, rate &gt;= threshold]</code></a></li>
+  <li><a href="#threshold" id="toc-threshold" class="nav-link" data-scroll-target="#threshold"><span class="header-section-number">6</span> Threshold</a></li>
+  <li><a href="#decision-summary" id="toc-decision-summary" class="nav-link" data-scroll-target="#decision-summary"><span class="header-section-number">7</span> Decision summary</a></li>
+  </ul>
+</nav>
+</div>
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<div class="quarto-title-block"><div><h1 class="title">DH Preliminary Model Diagnostics</h1><button type="button" class="btn code-tools-button" id="quarto-code-tools-source"><i class="bi"></i> Code</button></div></div>
+<p class="subtitle lead">Family / exposure_mode decisions from the 2026-05-07 evaluate run</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Bobby Reiner </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">May 8, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="scope" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="scope"><span class="header-section-number">1</span> Scope</h2>
+<p>This report records the screening decisions made on the 2026-05-07 preliminary double-hurdle (DH) evaluate run. The job at this stage is <strong>not</strong> to pick a single winning model — it is to discard families and exposure modes that clearly cannot win, so that the downstream selection step works against a narrower, more defensible grid.</p>
+<p>There are five potential decision axes per stage: <strong>family</strong>, <strong>exposure_mode</strong>, <strong>covariate set</strong>, <strong>threshold_quantile</strong>, and (implicitly) the data / fold structure. We work through them stage by stage:</p>
+<ol type="1">
+<li><strong>S1</strong> — <code>P(deaths &gt;= 1)</code> — threshold-independent.</li>
+<li><strong>S2</strong> — <code>P(rate &gt;= threshold | deaths &gt;= 1)</code> — threshold-dependent.</li>
+<li><strong>Bulk</strong> — <code>E[rate | deaths &gt;= 1, rate &lt; threshold]</code> — threshold-dependent.</li>
+<li><strong>Tail</strong> — <code>E[rate | deaths &gt;= 1, rate &gt;= threshold]</code> — threshold-dependent.</li>
+<li><strong>Threshold</strong> — left for a follow-up note.</li>
+</ol>
+<p>Each section shows the one or two plots that drove the call, the observations they support, and the locked-in decision.</p>
+</section>
+<section id="s1-pdeaths-1" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="s1-pdeaths-1"><span class="header-section-number">2</span> S1 — <code>P(deaths &gt;= 1)</code></h2>
+<p>S1 is fit on the full dataset. Its outcome (<code>any_death</code>) does not depend on <code>threshold_quantile</code>, so the same <code>(s1_family, s1_exposure_mode, s1_cov)</code> spec produces identical metrics across every DH configuration that uses it. Two structural choices to make:</p>
+<ul>
+<li><strong>family</strong>: <code>logit</code> or <code>cloglog</code>.</li>
+<li><strong>exposure_mode</strong>: how <code>log_exposed</code> enters the linear predictor.
+<ul>
+<li><code>excluded</code> — drop log_exposed.</li>
+<li><code>free</code> — include with a freely estimated coefficient.</li>
+<li><code>offset</code> — include with coefficient locked at 1 (cloglog only; corresponds to the proportional-hazards / Poisson-process derivation of cloglog).</li>
+</ul></li>
+</ul>
+<p>We deduplicate to one row per S1 spec and look at the best AUROC achievable in each <code>(family, exposure_mode)</code> cell.</p>
+<div id="cell-s1-heatmap" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div id="s1-heatmap" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="preliminary_decisions_files/figure-html/s1-heatmap-output-1.png" width="660" height="374" class="figure-img"></p>
+<figcaption>S1 — best <code>s1_auroc_oos</code> (out of 16 covariate combinations) per (family × exposure_mode) cell. Higher = better. The <code>logit / offset</code> cell is empty by design — <code>offset</code> is only valid with <code>cloglog</code>.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>What we saw:</strong></p>
+<ul>
+<li><code>cloglog × free</code> and <code>logit × free</code> are tied at 0.785 AUROC (Brier values agree to within ~0.001 as well). Identical ordering of fitted probabilities → identical AUROC, and the MLE pins the fitted-probability surface to nearly the same values for the two links when the data sits in moderate-p range. So the family choice carries no information here.</li>
+<li><code>cloglog × offset</code> collapses to 0.58 AUROC. The offset locks the log_exposed slope at 1, which is the wrong empirical slope (we expect more-exposed populations to have a <em>sub</em>-1 slope on per-person rate), so the model is forced into a misspecification it cannot escape.</li>
+<li><code>excluded</code> (no exposure information at all) sits at 0.72 — better than <code>offset</code> but well below <code>free</code>, confirming that exposure information carries real signal when used correctly.</li>
+</ul>
+<div class="callout callout-style-default callout-tip callout-titled" title="Decision — S1">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Decision — S1
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong><code>s1_family = logit</code>, <code>s1_exposure_mode = free</code>.</strong></p>
+<p>Drop <code>cloglog</code> (identical metrics, less canonical link, harder small-sample behavior — we’d only keep it for the proportional-hazards interpretation, which doesn’t survive once we move off <code>offset</code>). Drop <code>excluded</code> and <code>offset</code>.</p>
+<p>Uncertainty propagation works identically for both links — both fit via <code>sm.GLM</code>, both expose <code>cov_params()</code> for joint-coefficient sampling — so that is not a discriminator.</p>
+</div>
+</div>
+</section>
+<section id="s2-prate-threshold-deaths-1" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="s2-prate-threshold-deaths-1"><span class="header-section-number">3</span> S2 — <code>P(rate &gt;= threshold | deaths &gt;= 1)</code></h2>
+<p>S2’s outcome IS threshold-dependent: the binary label <code>rate &gt;= threshold</code> shifts as <code>threshold_quantile</code> moves. We deduplicate per <code>(s2_family, s2_exposure_mode, s2_cov, threshold_quantile)</code> and look at each threshold separately. Same family/exposure_mode question as S1.</p>
+<div id="cell-s2-heatmap" class="cell" data-fig-height="6" data-fig-width="14" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div id="s2-heatmap" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="preliminary_decisions_files/figure-html/s2-heatmap-output-1.png" width="1197" height="484" class="figure-img"></p>
+<figcaption>S2 — best <code>s2_auroc_oos</code> per (family × exposure_mode) cell, faceted by threshold. The free / excluded contrast is the dominant signal at every threshold.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>What we saw:</strong></p>
+<ul>
+<li><code>logit</code> and <code>cloglog</code> agree to within ~0.001 AUROC in every comparable cell across all thresholds — same identifiability story as S1.</li>
+<li><code>free</code> dominates <code>excluded</code> everywhere, with a widening gap at higher thresholds (0.92 vs 0.71 at threshold = 0.80; 0.96 vs 0.80 at 0.95).</li>
+</ul>
+<div class="callout callout-style-default callout-tip callout-titled" title="Decision — S2">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Decision — S2
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong><code>s2_family = logit</code>, <code>s2_exposure_mode = free</code></strong> at every threshold.</p>
+<p>Drop <code>cloglog</code> and <code>excluded</code>. Same reasoning as S1, applied across all thresholds.</p>
+</div>
+</div>
+</section>
+<section id="bulk-erate-deaths-1-rate-threshold" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="bulk-erate-deaths-1-rate-threshold"><span class="header-section-number">4</span> Bulk — <code>E[rate | deaths &gt;= 1, rate &lt; threshold]</code></h2>
+<p>Bulk has six candidate families: <code>beta</code>, <code>gamma</code>, <code>lognormal</code>, <code>scaled_logit</code>, <code>nb</code>, <code>poisson</code>. Three of them (<code>beta</code>, <code>scaled_logit</code>, <code>truncated_normal</code> — though truncated_normal is bulk-eligible only in limited form) enforce the bound <code>predicted_rate &lt; threshold</code> by construction. The other rate families (<code>gamma</code>, <code>lognormal</code>) and the count families (<code>nb</code>, <code>poisson</code>) can predict rates above threshold, extrapolating outside the bulk training support.</p>
+<p>Bulk is doubly threshold-dependent: the training set changes with threshold, <em>and</em> absolute-error metrics (<code>mae_rate</code>, <code>rmse_rate</code>, <code>mae_count</code>) shift in scale across thresholds. So we read MAE/RMSE <em>within</em> a threshold, not across, and use rank-based comparisons for cross-threshold consistency.</p>
+<section id="family-choice" class="level3" data-number="4.1">
+<h3 data-number="4.1" class="anchored" data-anchor-id="family-choice"><span class="header-section-number">4.1</span> Family choice</h3>
+<div id="cell-bulk-family-exposure-heatmap" class="cell" data-fig-height="8" data-fig-width="14" data-execution_count="4">
+<div class="cell-output cell-output-display">
+<div id="bulk-family-exposure-heatmap" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="preliminary_decisions_files/figure-html/bulk-family-exposure-heatmap-output-1.png" width="1199" height="868" class="figure-img"></p>
+<figcaption>Bulk — best <code>bulk_mae_rate_oos</code> per (family × exposure_mode) cell, faceted by threshold. Lower is better. Same-threshold rows are directly comparable; absolute values are not comparable across thresholds. <code>beta</code> and <code>scaled_logit</code> are tied for best in nearly every threshold.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>Cross-threshold rank stability.</strong> A natural worry: maybe the right bulk family at threshold = 0.80 is different from threshold = 0.95. We check by computing the Kendall τ between the rankings at each pair of thresholds — high τ means the same configurations win regardless of threshold.</p>
+<div id="cell-bulk-kendall" class="cell" data-fig-height="4" data-fig-width="18" data-execution_count="5">
+<div class="cell-output cell-output-display">
+<div id="bulk-kendall" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="preliminary_decisions_files/figure-html/bulk-kendall-output-1.png" width="1727" height="357" class="figure-img"></p>
+<figcaption>Cross-threshold Kendall τ between configuration rankings, one panel per metric. Adjacent thresholds agree at τ &gt; 0.85 in every metric, and τ ≥ 0.5 even between the most distant thresholds (0.70 vs 0.95). Rankings are stable enough that the family decision transfers across thresholds.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>What we saw:</strong></p>
+<ul>
+<li><code>beta</code> and <code>scaled_logit</code> consistently anchor the lowest-MAE cells at every threshold, with rankings nearly flat across the threshold sweep.</li>
+<li><code>gamma</code> and <code>lognormal</code> are competitive at low thresholds but drift toward higher MAE as threshold rises, consistent with their lack of upper-bound enforcement.</li>
+<li><code>nb</code> and <code>poisson</code> (the count-bulk families) live in the offset-only column and are worse than the rate families at every threshold.</li>
+<li>The Kendall τ matrix shows τ ≥ 0.78 between any pair of adjacent thresholds and ≥ 0.55 even between the extremes, so the family decision does not need to be threshold-specific.</li>
+</ul>
+<div class="callout callout-style-default callout-tip callout-titled" title="Decision — Bulk family">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Decision — Bulk family
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong><code>bulk_family ∈ {beta, scaled_logit}</code>.</strong></p>
+<p>Drop <code>gamma</code>, <code>lognormal</code>, <code>nb</code>, <code>poisson</code>. The two surviving families are precisely the ones that enforce <code>predicted_rate ∈ (0, threshold)</code> by construction — <code>beta</code> normalizes y by threshold, <code>scaled_logit</code>’s link maps <code>R → (0, threshold)</code>. The empirical dominance lines up with the structural argument: bulk’s job is the conditional expectation given the rate is below threshold, and the bounded families do not extrapolate out of support.</p>
+</div>
+</div>
+</section>
+<section id="exposure-mode" class="level3" data-number="4.2">
+<h3 data-number="4.2" class="anchored" data-anchor-id="exposure-mode"><span class="header-section-number">4.2</span> Exposure mode</h3>
+<p>Restricting to <code>beta</code> and <code>scaled_logit</code>, we re-examine the <code>exposure_mode</code> × covariate plane. Rate-bulk families have four exposure modes available: <code>excluded</code>, <code>free</code>, <code>free+weight</code>, <code>weight</code>.</p>
+<div id="cell-bulk-focus-heatmap" class="cell" data-fig-height="5" data-fig-width="14" data-execution_count="6">
+<div class="cell-output cell-output-display">
+<div id="bulk-focus-heatmap" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="preliminary_decisions_files/figure-html/bulk-focus-heatmap-output-1.png" width="1198" height="484" class="figure-img"></p>
+<figcaption>Bulk family × exposure_mode heatmap restricted to <code>beta</code> and <code>scaled_logit</code>. With only two families × four exposure modes, individual cell values become legible. <code>free</code> and <code>free+weight</code> dominate at every threshold for both families.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>What we saw:</strong></p>
+<ul>
+<li><code>free</code> and <code>free+weight</code> cells are uniformly the lowest-MAE cells at every threshold for both families.</li>
+<li><code>excluded</code> (no exposure term) and <code>weight</code> (population weights only, no slope on <code>log_exposed</code>) are visibly worse at every threshold.</li>
+<li>The pattern matches S1 / S2: there IS exposure information, dropping it or fixing its slope hurts. <code>free</code> lets the data choose the slope; <code>free+weight</code> adds population weighting on top.</li>
+</ul>
+<div class="callout callout-style-default callout-tip callout-titled" title="Decision — Bulk exposure mode">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Decision — Bulk exposure mode
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong><code>bulk_exposure_mode ∈ {free, free+weight}</code></strong> for both <code>beta</code> and <code>scaled_logit</code>.</p>
+<p>Drop <code>excluded</code> and <code>weight</code>. Both surviving modes are kept open because the choice between them is downstream — they produce similar rankings, and the call between weighted and unweighted IRLS is a calibration question, not a screening one.</p>
+</div>
+</div>
+</section>
+</section>
+<section id="tail-erate-deaths-1-rate-threshold" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="tail-erate-deaths-1-rate-threshold"><span class="header-section-number">5</span> Tail — <code>E[rate | deaths &gt;= 1, rate &gt;= threshold]</code></h2>
+<p>Tail has more candidate families (eight: <code>gamma</code>, <code>gpd</code>, <code>log_logistic</code>, <code>lognormal</code>, <code>nb</code>, <code>poisson</code>, <code>truncated_normal</code>, <code>weibull</code>) and a noisier ranking story than bulk. The cross-threshold Kendall τ heatmap drops into the 0.4–0.5 range for adjacent thresholds in count metrics — there is more shuffling here than in bulk. The cleanest framing for the screening question is therefore not “what’s best on average” but “which families have <em>any</em> covariate / exposure_mode combination that reaches the top 10 anywhere?”</p>
+<div id="cell-tail-attainability" class="cell" data-fig-height="5" data-fig-width="16" data-execution_count="7">
+<div class="cell-output cell-output-display">
+<div id="tail-attainability" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="preliminary_decisions_files/figure-html/tail-attainability-output-1.png" width="1808" height="528" class="figure-img"></p>
+<figcaption>Tail family attainability: per family, the <em>best</em> rank achieved across covariate × exposure_mode choices, at every (metric × threshold) cell. Green = the family has a config that reaches top 10 in that cell. Red = it doesn’t anywhere it appears, regardless of covariate or exposure_mode. Discrete color bins (1–4 / 5–10 / 11–20 / 21–40 / &gt;40) make top-10 attainability a one-look read.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>What we saw:</strong></p>
+<ul>
+<li><code>nb</code> and <code>poisson</code> are uniformly red. Their best-rank-achievable is &gt; 20 in nearly every (metric × threshold) cell — and structurally they are the wrong tool: count GLMs have no threshold awareness, so their predicted rates can land below threshold (a contradiction with the conditional eval set <code>rate &gt;= threshold</code>).</li>
+<li><code>gpd</code>, <code>log_logistic</code>, <code>lognormal</code>, <code>truncated_normal</code> reach top-10 in nearly every cell. They are the families that fit on <code>excess_rate = rate - threshold</code> (or, for <code>truncated_normal</code>, on log-rate with a lower truncation at log(threshold)) — both formulations enforce <code>predicted_rate &gt;= threshold</code> by construction.</li>
+<li><code>gamma</code> is mixed: rank 2–4 on rate metrics at low thresholds but rank 32–45 in MAE-count cells. Ceiling is high but the failure mode is broad enough to flag.</li>
+<li><code>weibull</code> never breaks top 10 in some cells but never goes truly bad (worst best-rank is 16). On the bubble.</li>
+</ul>
+<div class="callout callout-style-default callout-tip callout-titled" title="Decision — Tail">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Decision — Tail
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong>Drop <code>nb</code> and <code>poisson</code>.</strong> Tentatively keep <code>gpd</code>, <code>log_logistic</code>, <code>lognormal</code>, <code>truncated_normal</code>, <code>weibull</code>, <code>gamma</code> — but flag <strong><code>gamma</code> and <code>weibull</code> as suspicious</strong> pending closer look in the next iteration.</p>
+<p>Same structural argument as bulk: the families that enforce the conditional support (<code>predicted_rate &gt;= threshold</code>) by construction are precisely the ones that cluster at the top of the rankings.</p>
+</div>
+</div>
+</section>
+<section id="threshold" class="level2" data-number="6">
+<h2 data-number="6" class="anchored" data-anchor-id="threshold"><span class="header-section-number">6</span> Threshold</h2>
+<div class="callout callout-style-default callout-note callout-titled" title="Filling in next time">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Filling in next time
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The threshold decision is left for the next iteration of this report. The cross-threshold Kendall τ matrices computed for bulk show that family / exposure_mode rankings are stable enough across thresholds that the decisions above transfer; but the question of <em>which</em> threshold to pick — i.e., whether 0.80 or 0.85 or 0.90 produces the best assembled DH model — is a separate selection step that depends on properties of the assembled prediction (calibration, coverage, total death prediction) rather than per-stage metrics.</p>
+</div>
+</div>
+</section>
+<section id="decision-summary" class="level2" data-number="7">
+<h2 data-number="7" class="anchored" data-anchor-id="decision-summary"><span class="header-section-number">7</span> Decision summary</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 6%">
+<col style="width: 35%">
+<col style="width: 27%">
+<col style="width: 31%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Stage</th>
+<th>Family kept</th>
+<th>Exposure mode kept</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>S1</td>
+<td><code>logit</code></td>
+<td><code>free</code></td>
+<td>logit &amp; cloglog identical; offset misspecified</td>
+</tr>
+<tr class="even">
+<td>S2</td>
+<td><code>logit</code></td>
+<td><code>free</code></td>
+<td>log_exposed alone explains most discrimination</td>
+</tr>
+<tr class="odd">
+<td>Bulk</td>
+<td><code>beta</code>, <code>scaled_logit</code></td>
+<td><code>free</code>, <code>free+weight</code></td>
+<td>bounded families dominate by construction</td>
+</tr>
+<tr class="even">
+<td>Tail</td>
+<td><code>gpd</code>, <code>log_logistic</code>, <code>lognormal</code>, <code>truncated_normal</code> (+ <code>gamma</code>, <code>weibull</code> flagged)</td>
+<td>TBD</td>
+<td>drop <code>nb</code> and <code>poisson</code>; revisit gamma/weibull</td>
+</tr>
+<tr class="odd">
+<td>Threshold</td>
+<td>TBD</td>
+<td>—</td>
+<td>requires assembled-DH metrics, not per-stage</td>
+</tr>
+</tbody>
+</table>
+<p>Each entry above is logged as a discrete decision in <code>.claude/DECISIONS.md</code> with revisit conditions.</p>
+<!-- -->
+
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const detailsSrc = window.document.querySelectorAll(".cell > details > .sourceCode");
+        for (let i=0; i<detailsSrc.length; i++) {
+          const details = detailsSrc[i].parentElement;
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell > .sourceCode");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "DH Preliminary Model Diagnostics"</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="an">subtitle:</span><span class="co"> "Family / exposure_mode decisions from the 2026-05-07 evaluate run"</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> "Bobby Reiner"</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="an">date:</span><span class="co"> "2026-05-08"</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="an">format:</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co">  html:</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co">    code-fold: true</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="co">    code-tools: true</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="co">    toc-depth: 2</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co">    toc-location: left</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co">    fig-width: 12</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a><span class="co">    fig-height: 5</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co">    number-sections: true</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="an">execute:</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a><span class="co">  echo: false</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co">  warning: false</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="an">jupyter:</span><span class="co"> python3</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="fu">## Scope</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>This report records the screening decisions made on the 2026-05-07 preliminary</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>double-hurdle (DH) evaluate run. The job at this stage is **not** to pick a</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>single winning model — it is to discard families and exposure modes that</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>clearly cannot win, so that the downstream selection step works against a</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>narrower, more defensible grid.</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>There are five potential decision axes per stage: **family**, **exposure_mode**,</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>**covariate set**, **threshold_quantile**, and (implicitly) the data /</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>fold structure. We work through them stage by stage:</span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>**S1** — <span class="in">`P(deaths &gt;= 1)`</span> — threshold-independent.</span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>**S2** — <span class="in">`P(rate &gt;= threshold | deaths &gt;= 1)`</span> — threshold-dependent.</span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>**Bulk** — <span class="in">`E[rate | deaths &gt;= 1, rate &lt; threshold]`</span> — threshold-dependent.</span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a><span class="ss">4. </span>**Tail** — <span class="in">`E[rate | deaths &gt;= 1, rate &gt;= threshold]`</span> — threshold-dependent.</span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="ss">5. </span>**Threshold** — left for a follow-up note.</span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>Each section shows the one or two plots that drove the call, the</span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>observations they support, and the locked-in decision.</span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: setup</span></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> sys</span>
+<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a><span class="co"># Make the local helper module importable regardless of where Quarto runs from.</span></span>
+<span id="cb1-51"><a href="#cb1-51" aria-hidden="true" tabindex="-1"></a>sys.path.insert(<span class="dv">0</span>, <span class="bu">str</span>(Path(<span class="va">__file__</span>).resolve().parent <span class="cf">if</span> <span class="st">"__file__"</span> <span class="kw">in</span> <span class="bu">dir</span>() <span class="cf">else</span> Path(<span class="st">"."</span>).resolve()))</span>
+<span id="cb1-52"><a href="#cb1-52" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> _helpers <span class="im">as</span> H</span>
+<span id="cb1-53"><a href="#cb1-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-54"><a href="#cb1-54" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb1-55"><a href="#cb1-55" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
+<span id="cb1-56"><a href="#cb1-56" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb1-57"><a href="#cb1-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-58"><a href="#cb1-58" aria-hidden="true" tabindex="-1"></a>ROOT      <span class="op">=</span> Path(<span class="st">"/mnt/team/idd/pub/idd_tc_mortality"</span>)</span>
+<span id="cb1-59"><a href="#cb1-59" aria-hidden="true" tabindex="-1"></a>EVAL_DATE <span class="op">=</span> <span class="st">"20260507"</span></span>
+<span id="cb1-60"><a href="#cb1-60" aria-hidden="true" tabindex="-1"></a>RESULTS_PATH <span class="op">=</span> ROOT <span class="op">/</span> <span class="st">"02-evaluate"</span> <span class="op">/</span> EVAL_DATE <span class="op">/</span> <span class="st">"dh_results.parquet"</span></span>
+<span id="cb1-61"><a href="#cb1-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-62"><a href="#cb1-62" aria-hidden="true" tabindex="-1"></a>df <span class="op">=</span> H.load_and_aggregate(RESULTS_PATH)</span>
+<span id="cb1-63"><a href="#cb1-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-64"><a href="#cb1-64" aria-hidden="true" tabindex="-1"></a><span class="co"># Per-stage deduplicated frames.</span></span>
+<span id="cb1-65"><a href="#cb1-65" aria-hidden="true" tabindex="-1"></a>s1_df   <span class="op">=</span> H.dedup_for_stage(df, <span class="st">"s1"</span>)</span>
+<span id="cb1-66"><a href="#cb1-66" aria-hidden="true" tabindex="-1"></a>s2_df   <span class="op">=</span> H.dedup_for_stage(df, <span class="st">"s2"</span>)</span>
+<span id="cb1-67"><a href="#cb1-67" aria-hidden="true" tabindex="-1"></a>bulk_df <span class="op">=</span> H.dedup_for_stage(df, <span class="st">"bulk"</span>)</span>
+<span id="cb1-68"><a href="#cb1-68" aria-hidden="true" tabindex="-1"></a>tail_df <span class="op">=</span> H.dedup_for_stage(df, <span class="st">"tail"</span>)</span>
+<span id="cb1-69"><a href="#cb1-69" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-70"><a href="#cb1-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-71"><a href="#cb1-71" aria-hidden="true" tabindex="-1"></a><span class="fu">## S1 — `P(deaths &gt;= 1)`</span></span>
+<span id="cb1-72"><a href="#cb1-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-73"><a href="#cb1-73" aria-hidden="true" tabindex="-1"></a>S1 is fit on the full dataset. Its outcome (<span class="in">`any_death`</span>) does not depend on</span>
+<span id="cb1-74"><a href="#cb1-74" aria-hidden="true" tabindex="-1"></a><span class="in">`threshold_quantile`</span>, so the same <span class="in">`(s1_family, s1_exposure_mode, s1_cov)`</span></span>
+<span id="cb1-75"><a href="#cb1-75" aria-hidden="true" tabindex="-1"></a>spec produces identical metrics across every DH configuration that uses it.</span>
+<span id="cb1-76"><a href="#cb1-76" aria-hidden="true" tabindex="-1"></a>Two structural choices to make:</span>
+<span id="cb1-77"><a href="#cb1-77" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-78"><a href="#cb1-78" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**family**: <span class="in">`logit`</span> or <span class="in">`cloglog`</span>.</span>
+<span id="cb1-79"><a href="#cb1-79" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**exposure_mode**: how <span class="in">`log_exposed`</span> enters the linear predictor.</span>
+<span id="cb1-80"><a href="#cb1-80" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span><span class="in">`excluded`</span> — drop log_exposed.</span>
+<span id="cb1-81"><a href="#cb1-81" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span><span class="in">`free`</span>     — include with a freely estimated coefficient.</span>
+<span id="cb1-82"><a href="#cb1-82" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span><span class="in">`offset`</span>   — include with coefficient locked at 1 (cloglog only;</span>
+<span id="cb1-83"><a href="#cb1-83" aria-hidden="true" tabindex="-1"></a>    corresponds to the proportional-hazards / Poisson-process derivation</span>
+<span id="cb1-84"><a href="#cb1-84" aria-hidden="true" tabindex="-1"></a>    of cloglog).</span>
+<span id="cb1-85"><a href="#cb1-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-86"><a href="#cb1-86" aria-hidden="true" tabindex="-1"></a>We deduplicate to one row per S1 spec and look at the best AUROC achievable in</span>
+<span id="cb1-87"><a href="#cb1-87" aria-hidden="true" tabindex="-1"></a>each <span class="in">`(family, exposure_mode)`</span> cell.</span>
+<span id="cb1-88"><a href="#cb1-88" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-91"><a href="#cb1-91" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-92"><a href="#cb1-92" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: s1-heatmap</span></span>
+<span id="cb1-93"><a href="#cb1-93" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-cap: "S1 — best `s1_auroc_oos` (out of 16 covariate combinations) per (family × exposure_mode) cell. Higher = better. The `logit / offset` cell is empty by design — `offset` is only valid with `cloglog`."</span></span>
+<span id="cb1-94"><a href="#cb1-94" aria-hidden="true" tabindex="-1"></a>H.plot_stage_heatmap(s1_df, <span class="st">"s1"</span>, <span class="st">"s1_auroc_oos"</span>,</span>
+<span id="cb1-95"><a href="#cb1-95" aria-hidden="true" tabindex="-1"></a>                     lower_better<span class="op">=</span><span class="va">False</span>, log_scale<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-96"><a href="#cb1-96" aria-hidden="true" tabindex="-1"></a>                     facet_by_threshold<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb1-97"><a href="#cb1-97" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb1-98"><a href="#cb1-98" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-99"><a href="#cb1-99" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-100"><a href="#cb1-100" aria-hidden="true" tabindex="-1"></a>**What we saw:**</span>
+<span id="cb1-101"><a href="#cb1-101" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-102"><a href="#cb1-102" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`cloglog × free`</span> and <span class="in">`logit × free`</span> are tied at 0.785 AUROC (Brier</span>
+<span id="cb1-103"><a href="#cb1-103" aria-hidden="true" tabindex="-1"></a>  values agree to within ~0.001 as well). Identical ordering of fitted</span>
+<span id="cb1-104"><a href="#cb1-104" aria-hidden="true" tabindex="-1"></a>  probabilities → identical AUROC, and the MLE pins the fitted-probability</span>
+<span id="cb1-105"><a href="#cb1-105" aria-hidden="true" tabindex="-1"></a>  surface to nearly the same values for the two links when the data sits</span>
+<span id="cb1-106"><a href="#cb1-106" aria-hidden="true" tabindex="-1"></a>  in moderate-p range. So the family choice carries no information here.</span>
+<span id="cb1-107"><a href="#cb1-107" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`cloglog × offset`</span> collapses to 0.58 AUROC. The offset locks the</span>
+<span id="cb1-108"><a href="#cb1-108" aria-hidden="true" tabindex="-1"></a>  log_exposed slope at 1, which is the wrong empirical slope (we expect</span>
+<span id="cb1-109"><a href="#cb1-109" aria-hidden="true" tabindex="-1"></a>  more-exposed populations to have a *sub*-1 slope on per-person rate),</span>
+<span id="cb1-110"><a href="#cb1-110" aria-hidden="true" tabindex="-1"></a>  so the model is forced into a misspecification it cannot escape.</span>
+<span id="cb1-111"><a href="#cb1-111" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`excluded`</span> (no exposure information at all) sits at 0.72 — better than</span>
+<span id="cb1-112"><a href="#cb1-112" aria-hidden="true" tabindex="-1"></a>  <span class="in">`offset`</span> but well below <span class="in">`free`</span>, confirming that exposure information</span>
+<span id="cb1-113"><a href="#cb1-113" aria-hidden="true" tabindex="-1"></a>  carries real signal when used correctly.</span>
+<span id="cb1-114"><a href="#cb1-114" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-115"><a href="#cb1-115" aria-hidden="true" tabindex="-1"></a>::: {.callout-tip title="Decision — S1"}</span>
+<span id="cb1-116"><a href="#cb1-116" aria-hidden="true" tabindex="-1"></a>**`s1_family = logit`, `s1_exposure_mode = free`.**</span>
+<span id="cb1-117"><a href="#cb1-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-118"><a href="#cb1-118" aria-hidden="true" tabindex="-1"></a>Drop <span class="in">`cloglog`</span> (identical metrics, less canonical link, harder small-sample</span>
+<span id="cb1-119"><a href="#cb1-119" aria-hidden="true" tabindex="-1"></a>behavior — we'd only keep it for the proportional-hazards interpretation,</span>
+<span id="cb1-120"><a href="#cb1-120" aria-hidden="true" tabindex="-1"></a>which doesn't survive once we move off <span class="in">`offset`</span>). Drop <span class="in">`excluded`</span> and</span>
+<span id="cb1-121"><a href="#cb1-121" aria-hidden="true" tabindex="-1"></a><span class="in">`offset`</span>.</span>
+<span id="cb1-122"><a href="#cb1-122" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-123"><a href="#cb1-123" aria-hidden="true" tabindex="-1"></a>Uncertainty propagation works identically for both links — both fit via</span>
+<span id="cb1-124"><a href="#cb1-124" aria-hidden="true" tabindex="-1"></a><span class="in">`sm.GLM`</span>, both expose <span class="in">`cov_params()`</span> for joint-coefficient sampling — so</span>
+<span id="cb1-125"><a href="#cb1-125" aria-hidden="true" tabindex="-1"></a>that is not a discriminator.</span>
+<span id="cb1-126"><a href="#cb1-126" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-127"><a href="#cb1-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-128"><a href="#cb1-128" aria-hidden="true" tabindex="-1"></a><span class="fu">## S2 — `P(rate &gt;= threshold | deaths &gt;= 1)`</span></span>
+<span id="cb1-129"><a href="#cb1-129" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-130"><a href="#cb1-130" aria-hidden="true" tabindex="-1"></a>S2's outcome IS threshold-dependent: the binary label <span class="in">`rate &gt;= threshold`</span></span>
+<span id="cb1-131"><a href="#cb1-131" aria-hidden="true" tabindex="-1"></a>shifts as <span class="in">`threshold_quantile`</span> moves. We deduplicate per</span>
+<span id="cb1-132"><a href="#cb1-132" aria-hidden="true" tabindex="-1"></a><span class="in">`(s2_family, s2_exposure_mode, s2_cov, threshold_quantile)`</span> and look at</span>
+<span id="cb1-133"><a href="#cb1-133" aria-hidden="true" tabindex="-1"></a>each threshold separately. Same family/exposure_mode question as S1.</span>
+<span id="cb1-134"><a href="#cb1-134" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-137"><a href="#cb1-137" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-138"><a href="#cb1-138" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: s2-heatmap</span></span>
+<span id="cb1-139"><a href="#cb1-139" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-cap: "S2 — best `s2_auroc_oos` per (family × exposure_mode) cell, faceted by threshold. The free / excluded contrast is the dominant signal at every threshold."</span></span>
+<span id="cb1-140"><a href="#cb1-140" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-width: 14</span></span>
+<span id="cb1-141"><a href="#cb1-141" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-height: 6</span></span>
+<span id="cb1-142"><a href="#cb1-142" aria-hidden="true" tabindex="-1"></a>H.plot_stage_heatmap(s2_df, <span class="st">"s2"</span>, <span class="st">"s2_auroc_oos"</span>,</span>
+<span id="cb1-143"><a href="#cb1-143" aria-hidden="true" tabindex="-1"></a>                     lower_better<span class="op">=</span><span class="va">False</span>, log_scale<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-144"><a href="#cb1-144" aria-hidden="true" tabindex="-1"></a>                     facet_by_threshold<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb1-145"><a href="#cb1-145" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb1-146"><a href="#cb1-146" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-147"><a href="#cb1-147" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-148"><a href="#cb1-148" aria-hidden="true" tabindex="-1"></a>**What we saw:**</span>
+<span id="cb1-149"><a href="#cb1-149" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-150"><a href="#cb1-150" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`logit`</span> and <span class="in">`cloglog`</span> agree to within ~0.001 AUROC in every comparable</span>
+<span id="cb1-151"><a href="#cb1-151" aria-hidden="true" tabindex="-1"></a>  cell across all thresholds — same identifiability story as S1.</span>
+<span id="cb1-152"><a href="#cb1-152" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`free`</span> dominates <span class="in">`excluded`</span> everywhere, with a widening gap at higher</span>
+<span id="cb1-153"><a href="#cb1-153" aria-hidden="true" tabindex="-1"></a>  thresholds (0.92 vs 0.71 at threshold = 0.80; 0.96 vs 0.80 at 0.95).</span>
+<span id="cb1-154"><a href="#cb1-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-155"><a href="#cb1-155" aria-hidden="true" tabindex="-1"></a>::: {.callout-tip title="Decision — S2"}</span>
+<span id="cb1-156"><a href="#cb1-156" aria-hidden="true" tabindex="-1"></a>**`s2_family = logit`, `s2_exposure_mode = free`** at every threshold.</span>
+<span id="cb1-157"><a href="#cb1-157" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-158"><a href="#cb1-158" aria-hidden="true" tabindex="-1"></a>Drop <span class="in">`cloglog`</span> and <span class="in">`excluded`</span>. Same reasoning as S1, applied across all</span>
+<span id="cb1-159"><a href="#cb1-159" aria-hidden="true" tabindex="-1"></a>thresholds.</span>
+<span id="cb1-160"><a href="#cb1-160" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-161"><a href="#cb1-161" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-162"><a href="#cb1-162" aria-hidden="true" tabindex="-1"></a><span class="fu">## Bulk — `E[rate | deaths &gt;= 1, rate &lt; threshold]`</span></span>
+<span id="cb1-163"><a href="#cb1-163" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-164"><a href="#cb1-164" aria-hidden="true" tabindex="-1"></a>Bulk has six candidate families: <span class="in">`beta`</span>, <span class="in">`gamma`</span>, <span class="in">`lognormal`</span>,</span>
+<span id="cb1-165"><a href="#cb1-165" aria-hidden="true" tabindex="-1"></a><span class="in">`scaled_logit`</span>, <span class="in">`nb`</span>, <span class="in">`poisson`</span>. Three of them (<span class="in">`beta`</span>, <span class="in">`scaled_logit`</span>,</span>
+<span id="cb1-166"><a href="#cb1-166" aria-hidden="true" tabindex="-1"></a><span class="in">`truncated_normal`</span> — though truncated_normal is bulk-eligible only in</span>
+<span id="cb1-167"><a href="#cb1-167" aria-hidden="true" tabindex="-1"></a>limited form) enforce the bound <span class="in">`predicted_rate &lt; threshold`</span> by</span>
+<span id="cb1-168"><a href="#cb1-168" aria-hidden="true" tabindex="-1"></a>construction. The other rate families (<span class="in">`gamma`</span>, <span class="in">`lognormal`</span>) and the</span>
+<span id="cb1-169"><a href="#cb1-169" aria-hidden="true" tabindex="-1"></a>count families (<span class="in">`nb`</span>, <span class="in">`poisson`</span>) can predict rates above threshold,</span>
+<span id="cb1-170"><a href="#cb1-170" aria-hidden="true" tabindex="-1"></a>extrapolating outside the bulk training support.</span>
+<span id="cb1-171"><a href="#cb1-171" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-172"><a href="#cb1-172" aria-hidden="true" tabindex="-1"></a>Bulk is doubly threshold-dependent: the training set changes with</span>
+<span id="cb1-173"><a href="#cb1-173" aria-hidden="true" tabindex="-1"></a>threshold, *and* absolute-error metrics (<span class="in">`mae_rate`</span>, <span class="in">`rmse_rate`</span>,</span>
+<span id="cb1-174"><a href="#cb1-174" aria-hidden="true" tabindex="-1"></a><span class="in">`mae_count`</span>) shift in scale across thresholds. So we read MAE/RMSE</span>
+<span id="cb1-175"><a href="#cb1-175" aria-hidden="true" tabindex="-1"></a>*within* a threshold, not across, and use rank-based comparisons for</span>
+<span id="cb1-176"><a href="#cb1-176" aria-hidden="true" tabindex="-1"></a>cross-threshold consistency.</span>
+<span id="cb1-177"><a href="#cb1-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-178"><a href="#cb1-178" aria-hidden="true" tabindex="-1"></a><span class="fu">### Family choice</span></span>
+<span id="cb1-179"><a href="#cb1-179" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-182"><a href="#cb1-182" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-183"><a href="#cb1-183" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: bulk-family-exposure-heatmap</span></span>
+<span id="cb1-184"><a href="#cb1-184" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-cap: "Bulk — best `bulk_mae_rate_oos` per (family × exposure_mode) cell, faceted by threshold. Lower is better. Same-threshold rows are directly comparable; absolute values are not comparable across thresholds. `beta` and `scaled_logit` are tied for best in nearly every threshold."</span></span>
+<span id="cb1-185"><a href="#cb1-185" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-width: 14</span></span>
+<span id="cb1-186"><a href="#cb1-186" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-height: 8</span></span>
+<span id="cb1-187"><a href="#cb1-187" aria-hidden="true" tabindex="-1"></a>H.plot_stage_heatmap(bulk_df, <span class="st">"bulk"</span>, <span class="st">"bulk_mae_rate_oos"</span>,</span>
+<span id="cb1-188"><a href="#cb1-188" aria-hidden="true" tabindex="-1"></a>                     lower_better<span class="op">=</span><span class="va">True</span>, log_scale<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-189"><a href="#cb1-189" aria-hidden="true" tabindex="-1"></a>                     facet_by_threshold<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb1-190"><a href="#cb1-190" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb1-191"><a href="#cb1-191" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-192"><a href="#cb1-192" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-193"><a href="#cb1-193" aria-hidden="true" tabindex="-1"></a>**Cross-threshold rank stability.** A natural worry: maybe the right</span>
+<span id="cb1-194"><a href="#cb1-194" aria-hidden="true" tabindex="-1"></a>bulk family at threshold = 0.80 is different from threshold = 0.95.</span>
+<span id="cb1-195"><a href="#cb1-195" aria-hidden="true" tabindex="-1"></a>We check by computing the Kendall τ between the rankings at each pair</span>
+<span id="cb1-196"><a href="#cb1-196" aria-hidden="true" tabindex="-1"></a>of thresholds — high τ means the same configurations win regardless</span>
+<span id="cb1-197"><a href="#cb1-197" aria-hidden="true" tabindex="-1"></a>of threshold.</span>
+<span id="cb1-198"><a href="#cb1-198" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-201"><a href="#cb1-201" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-202"><a href="#cb1-202" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: bulk-kendall</span></span>
+<span id="cb1-203"><a href="#cb1-203" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-cap: "Cross-threshold Kendall τ between configuration rankings, one panel per metric. Adjacent thresholds agree at τ &gt; 0.85 in every metric, and τ ≥ 0.5 even between the most distant thresholds (0.70 vs 0.95). Rankings are stable enough that the family decision transfers across thresholds."</span></span>
+<span id="cb1-204"><a href="#cb1-204" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-width: 18</span></span>
+<span id="cb1-205"><a href="#cb1-205" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-height: 4</span></span>
+<span id="cb1-206"><a href="#cb1-206" aria-hidden="true" tabindex="-1"></a>BULK_METRICS <span class="op">=</span> [</span>
+<span id="cb1-207"><a href="#cb1-207" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_mae_rate_oos"</span>, <span class="st">"bulk_rmse_rate_oos"</span>, <span class="st">"bulk_cor_rate_oos"</span>,</span>
+<span id="cb1-208"><a href="#cb1-208" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_mae_count_oos"</span>, <span class="st">"bulk_cor_count_oos"</span>,</span>
+<span id="cb1-209"><a href="#cb1-209" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb1-210"><a href="#cb1-210" aria-hidden="true" tabindex="-1"></a>BULK_DIR <span class="op">=</span> {</span>
+<span id="cb1-211"><a href="#cb1-211" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_mae_rate_oos"</span>:  <span class="st">"lower"</span>,</span>
+<span id="cb1-212"><a href="#cb1-212" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_rmse_rate_oos"</span>: <span class="st">"lower"</span>,</span>
+<span id="cb1-213"><a href="#cb1-213" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_cor_rate_oos"</span>:  <span class="st">"higher"</span>,</span>
+<span id="cb1-214"><a href="#cb1-214" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_mae_count_oos"</span>: <span class="st">"lower"</span>,</span>
+<span id="cb1-215"><a href="#cb1-215" aria-hidden="true" tabindex="-1"></a>    <span class="st">"bulk_cor_count_oos"</span>: <span class="st">"higher"</span>,</span>
+<span id="cb1-216"><a href="#cb1-216" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-217"><a href="#cb1-217" aria-hidden="true" tabindex="-1"></a>H.kendall_threshold_heatmap(bulk_df, <span class="st">"bulk"</span>, BULK_METRICS,</span>
+<span id="cb1-218"><a href="#cb1-218" aria-hidden="true" tabindex="-1"></a>                            metric_directions<span class="op">=</span>BULK_DIR)</span>
+<span id="cb1-219"><a href="#cb1-219" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb1-220"><a href="#cb1-220" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-221"><a href="#cb1-221" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-222"><a href="#cb1-222" aria-hidden="true" tabindex="-1"></a>**What we saw:**</span>
+<span id="cb1-223"><a href="#cb1-223" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-224"><a href="#cb1-224" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`beta`</span> and <span class="in">`scaled_logit`</span> consistently anchor the lowest-MAE cells at</span>
+<span id="cb1-225"><a href="#cb1-225" aria-hidden="true" tabindex="-1"></a>  every threshold, with rankings nearly flat across the threshold sweep.</span>
+<span id="cb1-226"><a href="#cb1-226" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`gamma`</span> and <span class="in">`lognormal`</span> are competitive at low thresholds but drift</span>
+<span id="cb1-227"><a href="#cb1-227" aria-hidden="true" tabindex="-1"></a>  toward higher MAE as threshold rises, consistent with their lack of</span>
+<span id="cb1-228"><a href="#cb1-228" aria-hidden="true" tabindex="-1"></a>  upper-bound enforcement.</span>
+<span id="cb1-229"><a href="#cb1-229" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`nb`</span> and <span class="in">`poisson`</span> (the count-bulk families) live in the offset-only</span>
+<span id="cb1-230"><a href="#cb1-230" aria-hidden="true" tabindex="-1"></a>  column and are worse than the rate families at every threshold.</span>
+<span id="cb1-231"><a href="#cb1-231" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>The Kendall τ matrix shows τ ≥ 0.78 between any pair of adjacent</span>
+<span id="cb1-232"><a href="#cb1-232" aria-hidden="true" tabindex="-1"></a>  thresholds and ≥ 0.55 even between the extremes, so the family</span>
+<span id="cb1-233"><a href="#cb1-233" aria-hidden="true" tabindex="-1"></a>  decision does not need to be threshold-specific.</span>
+<span id="cb1-234"><a href="#cb1-234" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-235"><a href="#cb1-235" aria-hidden="true" tabindex="-1"></a>::: {.callout-tip title="Decision — Bulk family"}</span>
+<span id="cb1-236"><a href="#cb1-236" aria-hidden="true" tabindex="-1"></a>**`bulk_family ∈ {beta, scaled_logit}`.**</span>
+<span id="cb1-237"><a href="#cb1-237" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-238"><a href="#cb1-238" aria-hidden="true" tabindex="-1"></a>Drop <span class="in">`gamma`</span>, <span class="in">`lognormal`</span>, <span class="in">`nb`</span>, <span class="in">`poisson`</span>. The two surviving families</span>
+<span id="cb1-239"><a href="#cb1-239" aria-hidden="true" tabindex="-1"></a>are precisely the ones that enforce <span class="in">`predicted_rate ∈ (0, threshold)`</span></span>
+<span id="cb1-240"><a href="#cb1-240" aria-hidden="true" tabindex="-1"></a>by construction — <span class="in">`beta`</span> normalizes y by threshold, <span class="in">`scaled_logit`</span>'s</span>
+<span id="cb1-241"><a href="#cb1-241" aria-hidden="true" tabindex="-1"></a>link maps <span class="in">`R → (0, threshold)`</span>. The empirical dominance lines up with</span>
+<span id="cb1-242"><a href="#cb1-242" aria-hidden="true" tabindex="-1"></a>the structural argument: bulk's job is the conditional expectation</span>
+<span id="cb1-243"><a href="#cb1-243" aria-hidden="true" tabindex="-1"></a>given the rate is below threshold, and the bounded families do not</span>
+<span id="cb1-244"><a href="#cb1-244" aria-hidden="true" tabindex="-1"></a>extrapolate out of support.</span>
+<span id="cb1-245"><a href="#cb1-245" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-246"><a href="#cb1-246" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-247"><a href="#cb1-247" aria-hidden="true" tabindex="-1"></a><span class="fu">### Exposure mode</span></span>
+<span id="cb1-248"><a href="#cb1-248" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-249"><a href="#cb1-249" aria-hidden="true" tabindex="-1"></a>Restricting to <span class="in">`beta`</span> and <span class="in">`scaled_logit`</span>, we re-examine the</span>
+<span id="cb1-250"><a href="#cb1-250" aria-hidden="true" tabindex="-1"></a><span class="in">`exposure_mode`</span> × covariate plane. Rate-bulk families have four</span>
+<span id="cb1-251"><a href="#cb1-251" aria-hidden="true" tabindex="-1"></a>exposure modes available: <span class="in">`excluded`</span>, <span class="in">`free`</span>, <span class="in">`free+weight`</span>, <span class="in">`weight`</span>.</span>
+<span id="cb1-252"><a href="#cb1-252" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-255"><a href="#cb1-255" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-256"><a href="#cb1-256" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: bulk-focus-heatmap</span></span>
+<span id="cb1-257"><a href="#cb1-257" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-cap: "Bulk family × exposure_mode heatmap restricted to `beta` and `scaled_logit`. With only two families × four exposure modes, individual cell values become legible. `free` and `free+weight` dominate at every threshold for both families."</span></span>
+<span id="cb1-258"><a href="#cb1-258" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-width: 14</span></span>
+<span id="cb1-259"><a href="#cb1-259" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-height: 5</span></span>
+<span id="cb1-260"><a href="#cb1-260" aria-hidden="true" tabindex="-1"></a>bulk_focus_df <span class="op">=</span> bulk_df[bulk_df[<span class="st">"bulk_family"</span>].isin([<span class="st">"beta"</span>, <span class="st">"scaled_logit"</span>])].copy()</span>
+<span id="cb1-261"><a href="#cb1-261" aria-hidden="true" tabindex="-1"></a>H.plot_stage_heatmap(bulk_focus_df, <span class="st">"bulk"</span>, <span class="st">"bulk_mae_rate_oos"</span>,</span>
+<span id="cb1-262"><a href="#cb1-262" aria-hidden="true" tabindex="-1"></a>                     lower_better<span class="op">=</span><span class="va">True</span>, log_scale<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-263"><a href="#cb1-263" aria-hidden="true" tabindex="-1"></a>                     facet_by_threshold<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb1-264"><a href="#cb1-264" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb1-265"><a href="#cb1-265" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-266"><a href="#cb1-266" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-267"><a href="#cb1-267" aria-hidden="true" tabindex="-1"></a>**What we saw:**</span>
+<span id="cb1-268"><a href="#cb1-268" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-269"><a href="#cb1-269" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`free`</span> and <span class="in">`free+weight`</span> cells are uniformly the lowest-MAE cells at</span>
+<span id="cb1-270"><a href="#cb1-270" aria-hidden="true" tabindex="-1"></a>  every threshold for both families.</span>
+<span id="cb1-271"><a href="#cb1-271" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`excluded`</span> (no exposure term) and <span class="in">`weight`</span> (population weights only,</span>
+<span id="cb1-272"><a href="#cb1-272" aria-hidden="true" tabindex="-1"></a>  no slope on <span class="in">`log_exposed`</span>) are visibly worse at every threshold.</span>
+<span id="cb1-273"><a href="#cb1-273" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>The pattern matches S1 / S2: there IS exposure information, dropping</span>
+<span id="cb1-274"><a href="#cb1-274" aria-hidden="true" tabindex="-1"></a>  it or fixing its slope hurts. <span class="in">`free`</span> lets the data choose the slope;</span>
+<span id="cb1-275"><a href="#cb1-275" aria-hidden="true" tabindex="-1"></a>  <span class="in">`free+weight`</span> adds population weighting on top.</span>
+<span id="cb1-276"><a href="#cb1-276" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-277"><a href="#cb1-277" aria-hidden="true" tabindex="-1"></a>::: {.callout-tip title="Decision — Bulk exposure mode"}</span>
+<span id="cb1-278"><a href="#cb1-278" aria-hidden="true" tabindex="-1"></a>**`bulk_exposure_mode ∈ {free, free+weight}`** for both <span class="in">`beta`</span> and</span>
+<span id="cb1-279"><a href="#cb1-279" aria-hidden="true" tabindex="-1"></a><span class="in">`scaled_logit`</span>.</span>
+<span id="cb1-280"><a href="#cb1-280" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-281"><a href="#cb1-281" aria-hidden="true" tabindex="-1"></a>Drop <span class="in">`excluded`</span> and <span class="in">`weight`</span>. Both surviving modes are kept open</span>
+<span id="cb1-282"><a href="#cb1-282" aria-hidden="true" tabindex="-1"></a>because the choice between them is downstream — they produce similar</span>
+<span id="cb1-283"><a href="#cb1-283" aria-hidden="true" tabindex="-1"></a>rankings, and the call between weighted and unweighted IRLS is a</span>
+<span id="cb1-284"><a href="#cb1-284" aria-hidden="true" tabindex="-1"></a>calibration question, not a screening one.</span>
+<span id="cb1-285"><a href="#cb1-285" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-286"><a href="#cb1-286" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-287"><a href="#cb1-287" aria-hidden="true" tabindex="-1"></a><span class="fu">## Tail — `E[rate | deaths &gt;= 1, rate &gt;= threshold]`</span></span>
+<span id="cb1-288"><a href="#cb1-288" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-289"><a href="#cb1-289" aria-hidden="true" tabindex="-1"></a>Tail has more candidate families (eight: <span class="in">`gamma`</span>, <span class="in">`gpd`</span>, <span class="in">`log_logistic`</span>,</span>
+<span id="cb1-290"><a href="#cb1-290" aria-hidden="true" tabindex="-1"></a><span class="in">`lognormal`</span>, <span class="in">`nb`</span>, <span class="in">`poisson`</span>, <span class="in">`truncated_normal`</span>, <span class="in">`weibull`</span>) and a noisier</span>
+<span id="cb1-291"><a href="#cb1-291" aria-hidden="true" tabindex="-1"></a>ranking story than bulk. The cross-threshold Kendall τ heatmap drops</span>
+<span id="cb1-292"><a href="#cb1-292" aria-hidden="true" tabindex="-1"></a>into the 0.4–0.5 range for adjacent thresholds in count metrics — there</span>
+<span id="cb1-293"><a href="#cb1-293" aria-hidden="true" tabindex="-1"></a>is more shuffling here than in bulk. The cleanest framing for the</span>
+<span id="cb1-294"><a href="#cb1-294" aria-hidden="true" tabindex="-1"></a>screening question is therefore not "what's best on average" but</span>
+<span id="cb1-295"><a href="#cb1-295" aria-hidden="true" tabindex="-1"></a>"which families have *any* covariate / exposure_mode combination that</span>
+<span id="cb1-296"><a href="#cb1-296" aria-hidden="true" tabindex="-1"></a>reaches the top 10 anywhere?"</span>
+<span id="cb1-297"><a href="#cb1-297" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-300"><a href="#cb1-300" aria-hidden="true" tabindex="-1"></a><span class="in">```{python}</span></span>
+<span id="cb1-301"><a href="#cb1-301" aria-hidden="true" tabindex="-1"></a><span class="co">#| label: tail-attainability</span></span>
+<span id="cb1-302"><a href="#cb1-302" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-cap: "Tail family attainability: per family, the *best* rank achieved across covariate × exposure_mode choices, at every (metric × threshold) cell. Green = the family has a config that reaches top 10 in that cell. Red = it doesn't anywhere it appears, regardless of covariate or exposure_mode. Discrete color bins (1–4 / 5–10 / 11–20 / 21–40 / &gt;40) make top-10 attainability a one-look read."</span></span>
+<span id="cb1-303"><a href="#cb1-303" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-width: 16</span></span>
+<span id="cb1-304"><a href="#cb1-304" aria-hidden="true" tabindex="-1"></a><span class="co">#| fig-height: 5</span></span>
+<span id="cb1-305"><a href="#cb1-305" aria-hidden="true" tabindex="-1"></a>TAIL_METRICS <span class="op">=</span> [</span>
+<span id="cb1-306"><a href="#cb1-306" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_mae_rate_oos"</span>, <span class="st">"tail_rmse_rate_oos"</span>, <span class="st">"tail_cor_rate_oos"</span>,</span>
+<span id="cb1-307"><a href="#cb1-307" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_mae_count_oos"</span>, <span class="st">"tail_cor_count_oos"</span>,</span>
+<span id="cb1-308"><a href="#cb1-308" aria-hidden="true" tabindex="-1"></a>]</span>
+<span id="cb1-309"><a href="#cb1-309" aria-hidden="true" tabindex="-1"></a>TAIL_DIR <span class="op">=</span> {</span>
+<span id="cb1-310"><a href="#cb1-310" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_mae_rate_oos"</span>:  <span class="st">"lower"</span>,</span>
+<span id="cb1-311"><a href="#cb1-311" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_rmse_rate_oos"</span>: <span class="st">"lower"</span>,</span>
+<span id="cb1-312"><a href="#cb1-312" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_cor_rate_oos"</span>:  <span class="st">"higher"</span>,</span>
+<span id="cb1-313"><a href="#cb1-313" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_mae_count_oos"</span>: <span class="st">"lower"</span>,</span>
+<span id="cb1-314"><a href="#cb1-314" aria-hidden="true" tabindex="-1"></a>    <span class="st">"tail_cor_count_oos"</span>: <span class="st">"higher"</span>,</span>
+<span id="cb1-315"><a href="#cb1-315" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb1-316"><a href="#cb1-316" aria-hidden="true" tabindex="-1"></a>H.family_attainability_heatmap(tail_df, <span class="st">"tail"</span>, TAIL_METRICS,</span>
+<span id="cb1-317"><a href="#cb1-317" aria-hidden="true" tabindex="-1"></a>                               metric_directions<span class="op">=</span>TAIL_DIR,</span>
+<span id="cb1-318"><a href="#cb1-318" aria-hidden="true" tabindex="-1"></a>                               top_n<span class="op">=</span><span class="dv">10</span>, drop_threshold<span class="op">=</span><span class="dv">20</span>)</span>
+<span id="cb1-319"><a href="#cb1-319" aria-hidden="true" tabindex="-1"></a>plt.show()</span>
+<span id="cb1-320"><a href="#cb1-320" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb1-321"><a href="#cb1-321" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-322"><a href="#cb1-322" aria-hidden="true" tabindex="-1"></a>**What we saw:**</span>
+<span id="cb1-323"><a href="#cb1-323" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-324"><a href="#cb1-324" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`nb`</span> and <span class="in">`poisson`</span> are uniformly red. Their best-rank-achievable is</span>
+<span id="cb1-325"><a href="#cb1-325" aria-hidden="true" tabindex="-1"></a><span class="at">  &gt; 20 in nearly every (metric × threshold) cell — and structurally</span></span>
+<span id="cb1-326"><a href="#cb1-326" aria-hidden="true" tabindex="-1"></a><span class="at">  they are the wrong tool: count GLMs have no threshold awareness, so</span></span>
+<span id="cb1-327"><a href="#cb1-327" aria-hidden="true" tabindex="-1"></a><span class="at">  their predicted rates can land below threshold (a contradiction</span></span>
+<span id="cb1-328"><a href="#cb1-328" aria-hidden="true" tabindex="-1"></a><span class="at">  with the conditional eval set </span><span class="in">`rate &gt;= threshold`</span><span class="at">).</span></span>
+<span id="cb1-329"><a href="#cb1-329" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`gpd`</span>, <span class="in">`log_logistic`</span>, <span class="in">`lognormal`</span>, <span class="in">`truncated_normal`</span> reach top-10</span>
+<span id="cb1-330"><a href="#cb1-330" aria-hidden="true" tabindex="-1"></a>  in nearly every cell. They are the families that fit on</span>
+<span id="cb1-331"><a href="#cb1-331" aria-hidden="true" tabindex="-1"></a>  <span class="in">`excess_rate = rate - threshold`</span> (or, for <span class="in">`truncated_normal`</span>, on</span>
+<span id="cb1-332"><a href="#cb1-332" aria-hidden="true" tabindex="-1"></a>  log-rate with a lower truncation at log(threshold)) — both</span>
+<span id="cb1-333"><a href="#cb1-333" aria-hidden="true" tabindex="-1"></a>  formulations enforce <span class="in">`predicted_rate &gt;= threshold`</span> by construction.</span>
+<span id="cb1-334"><a href="#cb1-334" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`gamma`</span> is mixed: rank 2–4 on rate metrics at low thresholds but</span>
+<span id="cb1-335"><a href="#cb1-335" aria-hidden="true" tabindex="-1"></a>  rank 32–45 in MAE-count cells. Ceiling is high but the failure mode</span>
+<span id="cb1-336"><a href="#cb1-336" aria-hidden="true" tabindex="-1"></a>  is broad enough to flag.</span>
+<span id="cb1-337"><a href="#cb1-337" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="in">`weibull`</span> never breaks top 10 in some cells but never goes truly bad</span>
+<span id="cb1-338"><a href="#cb1-338" aria-hidden="true" tabindex="-1"></a>  (worst best-rank is 16). On the bubble.</span>
+<span id="cb1-339"><a href="#cb1-339" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-340"><a href="#cb1-340" aria-hidden="true" tabindex="-1"></a>::: {.callout-tip title="Decision — Tail"}</span>
+<span id="cb1-341"><a href="#cb1-341" aria-hidden="true" tabindex="-1"></a>**Drop `nb` and `poisson`.** Tentatively keep <span class="in">`gpd`</span>, <span class="in">`log_logistic`</span>,</span>
+<span id="cb1-342"><a href="#cb1-342" aria-hidden="true" tabindex="-1"></a><span class="in">`lognormal`</span>, <span class="in">`truncated_normal`</span>, <span class="in">`weibull`</span>, <span class="in">`gamma`</span> — but flag</span>
+<span id="cb1-343"><a href="#cb1-343" aria-hidden="true" tabindex="-1"></a>**`gamma` and `weibull` as suspicious** pending closer look in the next</span>
+<span id="cb1-344"><a href="#cb1-344" aria-hidden="true" tabindex="-1"></a>iteration.</span>
+<span id="cb1-345"><a href="#cb1-345" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-346"><a href="#cb1-346" aria-hidden="true" tabindex="-1"></a>Same structural argument as bulk: the families that enforce the</span>
+<span id="cb1-347"><a href="#cb1-347" aria-hidden="true" tabindex="-1"></a>conditional support (<span class="in">`predicted_rate &gt;= threshold`</span>) by construction</span>
+<span id="cb1-348"><a href="#cb1-348" aria-hidden="true" tabindex="-1"></a>are precisely the ones that cluster at the top of the rankings.</span>
+<span id="cb1-349"><a href="#cb1-349" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-350"><a href="#cb1-350" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-351"><a href="#cb1-351" aria-hidden="true" tabindex="-1"></a><span class="fu">## Threshold</span></span>
+<span id="cb1-352"><a href="#cb1-352" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-353"><a href="#cb1-353" aria-hidden="true" tabindex="-1"></a>::: {.callout-note title="Filling in next time"}</span>
+<span id="cb1-354"><a href="#cb1-354" aria-hidden="true" tabindex="-1"></a>The threshold decision is left for the next iteration of this report.</span>
+<span id="cb1-355"><a href="#cb1-355" aria-hidden="true" tabindex="-1"></a>The cross-threshold Kendall τ matrices computed for bulk show that</span>
+<span id="cb1-356"><a href="#cb1-356" aria-hidden="true" tabindex="-1"></a>family / exposure_mode rankings are stable enough across thresholds that</span>
+<span id="cb1-357"><a href="#cb1-357" aria-hidden="true" tabindex="-1"></a>the decisions above transfer; but the question of *which* threshold to</span>
+<span id="cb1-358"><a href="#cb1-358" aria-hidden="true" tabindex="-1"></a>pick — i.e., whether 0.80 or 0.85 or 0.90 produces the best assembled DH</span>
+<span id="cb1-359"><a href="#cb1-359" aria-hidden="true" tabindex="-1"></a>model — is a separate selection step that depends on properties of the</span>
+<span id="cb1-360"><a href="#cb1-360" aria-hidden="true" tabindex="-1"></a>assembled prediction (calibration, coverage, total death prediction)</span>
+<span id="cb1-361"><a href="#cb1-361" aria-hidden="true" tabindex="-1"></a>rather than per-stage metrics.</span>
+<span id="cb1-362"><a href="#cb1-362" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb1-363"><a href="#cb1-363" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-364"><a href="#cb1-364" aria-hidden="true" tabindex="-1"></a><span class="fu">## Decision summary</span></span>
+<span id="cb1-365"><a href="#cb1-365" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-366"><a href="#cb1-366" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Stage  <span class="pp">|</span> Family kept                                 <span class="pp">|</span> Exposure mode kept                <span class="pp">|</span> Notes                                  <span class="pp">|</span></span>
+<span id="cb1-367"><a href="#cb1-367" aria-hidden="true" tabindex="-1"></a><span class="pp">|--------|---------------------------------------------|-----------------------------------|----------------------------------------|</span></span>
+<span id="cb1-368"><a href="#cb1-368" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> S1     <span class="pp">|</span> <span class="in">`logit`</span>                                     <span class="pp">|</span> <span class="in">`free`</span>                            <span class="pp">|</span> logit &amp; cloglog identical; offset misspecified <span class="pp">|</span></span>
+<span id="cb1-369"><a href="#cb1-369" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> S2     <span class="pp">|</span> <span class="in">`logit`</span>                                     <span class="pp">|</span> <span class="in">`free`</span>                            <span class="pp">|</span> log_exposed alone explains most discrimination <span class="pp">|</span></span>
+<span id="cb1-370"><a href="#cb1-370" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Bulk   <span class="pp">|</span> <span class="in">`beta`</span>, <span class="in">`scaled_logit`</span>                      <span class="pp">|</span> <span class="in">`free`</span>, <span class="in">`free+weight`</span>             <span class="pp">|</span> bounded families dominate by construction <span class="pp">|</span></span>
+<span id="cb1-371"><a href="#cb1-371" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Tail   <span class="pp">|</span> <span class="in">`gpd`</span>, <span class="in">`log_logistic`</span>, <span class="in">`lognormal`</span>, <span class="in">`truncated_normal`</span> (+ <span class="in">`gamma`</span>, <span class="in">`weibull`</span> flagged) <span class="pp">|</span> TBD <span class="pp">|</span> drop <span class="in">`nb`</span> and <span class="in">`poisson`</span>; revisit gamma/weibull <span class="pp">|</span></span>
+<span id="cb1-372"><a href="#cb1-372" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Threshold <span class="pp">|</span> TBD                                      <span class="pp">|</span> —                                 <span class="pp">|</span> requires assembled-DH metrics, not per-stage <span class="pp">|</span></span>
+<span id="cb1-373"><a href="#cb1-373" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-374"><a href="#cb1-374" aria-hidden="true" tabindex="-1"></a>Each entry above is logged as a discrete decision in</span>
+<span id="cb1-375"><a href="#cb1-375" aria-hidden="true" tabindex="-1"></a><span class="in">`.claude/DECISIONS.md`</span> with revisit conditions.</span>
+</code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+</div></div></div></div></div>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
