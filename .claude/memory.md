@@ -2,25 +2,24 @@
 Updated: 2026-07-14
 
 ## Current task
-Version-control groundwork for TWO upcoming full pipeline reruns (new input data each; preliminary → intermediate → refined → final diagnostics per cycle). Steps 0–2 + 3.1 of the agreed plan are DONE; next is discussing (a) the vintages to run and (b) the notebook reorganization.
+Rerun-cycle groundwork DONE through data ingest. Three sibling vintages ingested from the new PSH_20260711 CSV; next up: the notebook-reorganization discussion, then launching preliminary fit/evaluate per vintage.
 
 ## Context / why
-Bobby will rerun the entire pipeline twice with changed input data. Before that: lock the git baseline (everything was uncommitted/unpushed), adopt an explicit vintage contract, and remove the rerun hazards (hardcoded ingest SOURCE_CSV, build_draws stale folds default).
+Bobby is rerunning the full pipeline (preliminary → intermediate → refined → final diagnostics) on new input data as a training-window sensitivity: same filters, min-year 1985 vs 1990 vs 1995. Earlier today: git baseline locked (tag `cycle-20260608`), vintage contract documented, ingest parameterized.
 
 ## Where we are
-- **Baseline committed and tagged.** 6 commits on main on top of eba4c43: 71afb17 (evaluate/fit/metrics/viz + tests), 3894c64 (rake/postprocess + tests + build_sr_version_files), 719c414 (cycle scripts + 4 live diagnostics notebooks + 20260707 notebook + reports + README), 6f04904 (jobmon 10.12.2 pin), 19c0fc7 (.claude records + vintage-contract DECISIONS entry), 3ab43f9 (step-2 changes). Annotated tag **`cycle-20260608`** on 19c0fc7. All pushed? → see Next steps (push happens at end of this session's work).
-- **Vintage contract** documented in DECISIONS.md 2026-07-14 entry: one `<V>`=YYYYMMDD-of-ingest string used verbatim across `00-data/<V>`, `01-preliminary/<V>`, `02-evaluate/<V>_{refit,survivors,refined,final}`, `01-refined/<V>`, `03-draws/<V>/<mid>`, `04-predict/<V>/<mid>_*`; notebooks repoint via global find/replace of the vintage string; cycle closes with tag `cycle-<V>`.
-- **Step-2 changes:** ingest `01_prepare_input_data.py` gained `--source-csv`/`--vintage` (write_versioned takes vintage; 3/3 new tests in tests/ingest/); `build_draws.py --folds-path` now required (stale `20260608_final` default removed).
-- **Test suite: 708/719 pass.** 11 pre-existing failures: 9 = stale tests/fit/test_run_component.py (documented parking-lot item), +2 NOT previously documented: `tests/step_00_validate/test_validate.py::test_check_basins_empty_noncanonical_when_all_clean` and `tests/viz/test_stage_plots.py::test_vet_stage_3x3_layout`. Not diagnosed (out of scope today).
-- **Deliberately NOT committed** (pending notebook discussion): `notebooks/20260515/` (40M, incl. wtf.ipynb + a 10M .bak), `notebooks/archive/`, `notebooks/jobmon_resources/`, `basin_comparison{,_global}.pdf`. (`notebooks/20260623/` turned out to be already tracked.) `.gitignore` now ignores `*.bak.*`.
-- Prior open item unchanged: SR-31 guard + mean-vs-median rake decision for canonical deliverable (5-version comparison shipped 2026-07-13).
+- **Three vintages on disk** under `00-data/`: `20260714_v1985` (3,024 rows, 1985–2023), `20260714_v1990` (2,658), `20260714_v1995` (2,278). All from `ibtracs_stage4b_pafs_admin0_with_deaths_PSH_20260711_sdi_isisland.csv` (3,882 raw = old 3,621 + 261 `no_wind_exposure`-flagged rows) with `--drop-no-wind-exposure` + `--min-year`. `current` → `20260714_v1995`.
+- **is_island COPIED from 20260608, not re-pulled** — no conda env anywhere on the node has `db_queries` (documented GBD_shared_functions env lost it; full env sweep empty). Static covariate 2608/release 16 → content-identical (905 rows verified). Re-pull if db_queries returns.
+- **Ingest script** now has `--source-csv`, `--vintage`, `--drop-no-wind-exposure` (bool-dtype hard guard). tests/ingest 6/6.
+- Commits through `35ec535` (filter + DECISIONS entry) — check pushed state; earlier baseline (8 commits + tag `cycle-20260608`) pushed.
+- File perms: new vintage parquets chmod 664 (June's were 600; everything runs as bcreiner so either works).
+- Suite 708/719 earlier: 9 known-stale run_component + 2 undiagnosed (validate basins, stage_plots 3x3).
 
 ## Next steps
-1. Push main + `cycle-20260608` tag to origin (if not yet done this session).
-2. Discuss the two rerun vintages (source CSVs, naming, sequential vs interleaved).
-3. Notebook reorganization discussion ("untenable"): what to do with notebooks/20260515 (40M of forks), 20260623, archive, jobmon_resources; repoint-in-place + tag vs cp into notebooks/<V>/ at cycle close; consolidate preliminary notebook's two config cells; final notebook's hardcoded winner mids + stale prose.
-4. Then: ingest cycle-1 data (`--source-csv <new.csv> --vintage <V>` + immediately `02_prepare_is_island.py --vintage <V>`).
-5. Carried: SR-31/rake-stat canonical decision; delete dead fit stage; stale test_run_component tests; 2 newly-surfaced test failures (validate, stage_plots).
+1. Push `6ee7fd9` + `35ec535` if not yet pushed.
+2. **Notebook reorganization discussion** (Bobby: "untenable"): notebooks/20260515 (40M forks, uncommitted), archive/, jobmon_resources/, basin PDFs; repoint-in-place vs cp-per-cycle; preliminary notebook's two config cells; final notebook's hardcoded winner mids.
+3. Launch cycle runs per vintage contract: `01-preliminary/20260714_v<Y>/`, `02-evaluate/20260714_v<Y>_refit/` etc. (fit/evaluate orchestrators take explicit --data-path/--output-dir; remember single-task probe first per scaling rules).
+4. Carried: SR-31 guard + rake-stat canonical decision; dead fit stage deletion; stale run_component tests; 2 undiagnosed test failures.
 
 ## Resume prompt
-Session 2026-07-14 (idd-tc-mortality, main): Locked the git baseline for two upcoming pipeline reruns. Committed all outstanding work as 6 logical commits, tagged `cycle-20260608` (code+notebook state of the completed cycle), documented the vintage contract in DECISIONS.md (one <V> string across all stage dirs, suffixes _refit/_survivors/_refined/_final kept verbatim so notebook repointing = find/replace). Ingest script now takes --source-csv/--vintage (tests 3/3); build_draws --folds-path is required. Suite 708/719 (9 known-stale run_component + 2 undiagnosed: validate basins test, stage_plots 3x3 test). notebooks/{20260515,20260623,archive,jobmon_resources} and the two basin PDFs intentionally left uncommitted pending the notebook-reorg discussion. Next: pick the two rerun vintages and settle the notebook situation.
+Session 2026-07-14 (idd-tc-mortality, main): After locking the git baseline (tag cycle-20260608) and parameterizing ingest, ingested the three rerun vintages 20260714_v{1985,1990,1995} from the new PSH_20260711 CSV — all with the new --drop-no-wind-exposure filter (drops 261 flagged rows), differing only in --min-year (3,024/2,658/2,278 rows). is_island.parquet was copied from 20260608 because NO env on the node has db_queries anymore (static covariate, content-identical, flagged in DECISIONS). current → 20260714_v1995. Ingest tests 6/6. Next: notebook-reorg discussion, then preliminary fit/evaluate for the three vintages using the vintage contract (dirs keyed on 20260714_v<Y>, suffixes _refit/_survivors/_refined/_final).
