@@ -40,8 +40,7 @@ from idd_tc_mortality.refit_with_objects import refit_model_with_objects
 from idd_tc_mortality.uncertainty import build_draw_models, save_draw_models
 
 ROOT = Path("/mnt/team/idd/pub/idd_tc_mortality")
-DEFAULT_DATA_PATH  = ROOT / "00-data" / "current" / "input.parquet"
-DEFAULT_FOLDS_PATH = ROOT / "02-evaluate" / "20260608_final" / "fold_assignments.parquet"
+DEFAULT_DATA_PATH = ROOT / "00-data" / "current" / "input.parquet"
 
 CONFIGS: list[tuple[int, int]] = [(0, 0), (0, 1), (1, 0), (1, 1)]  # (draw_coefs, draw_scale)
 
@@ -54,9 +53,11 @@ CONFIGS: list[tuple[int, int]] = [(0, 0), (0, 1), (1, 0), (1, 1)]  # (draw_coefs
               help="Where to write draws_c{c}_s{s}.pkl + metadata + focus_model.json.")
 @click.option("--data-path", default=str(DEFAULT_DATA_PATH), show_default=True,
               help="Fit data (input.parquet) to refit on.")
-@click.option("--folds-path", default=str(DEFAULT_FOLDS_PATH), show_default=True,
-              help="fold_assignments.parquet (must align row-for-row with --data-path; "
-                   "only seed_0 is touched and the OOS result is discarded).")
+@click.option("--folds-path", required=True,
+              help="fold_assignments.parquet from the SAME vintage as --data-path "
+                   "(must align row-for-row; only seed_0 is touched and the OOS "
+                   "result is discarded). No default: a stale cross-vintage fold "
+                   "file silently misaligns if row counts happen to match.")
 @click.option("--n-draws", default=100, show_default=True, type=int)
 @click.option("--seed", default=42, show_default=True, type=int)
 def main(focus_model_json, output_dir, data_path, folds_path, n_draws, seed):

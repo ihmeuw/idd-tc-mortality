@@ -1,8 +1,9 @@
 """
 01_prepare_input_data.py
 
-One-off ingest script. Run once per data vintage to produce input.parquet
-in the 00-data versioned output node.
+Ingest script. Run once per data vintage to produce input.parquet in the
+00-data versioned output node. The source CSV and output vintage name are
+CLI flags (--source-csv, --vintage) so no per-vintage edits are needed.
 
 What this does:
   1. Read the raw ibtracs + deaths CSV using the exact same settings as
@@ -31,12 +32,14 @@ Level filter options (--level-filter):
               exposure-weighted means; other fields take the first value.
 
 Source data:
+    Raw ibtracs+deaths CSVs live under
     /mnt/team/rapidresponse/pub/tropical-storms/data/ibtracs_deaths/
-        combined_ibtracs_with_deaths_deduplicated_with_sdi_updated_island.csv
-    (4.9 MB, last modified 2025-02-10, maintained by bedalton)
+    (maintained by bedalton). DEFAULT_SOURCE_CSV points at the last-used
+    vintage; pass --source-csv for a new one.
 
 Run:
-    conda run -n idd-tc-mortality python scripts/ingest/01_prepare_input_data.py
+    conda run -n idd-tc-mortality python scripts/ingest/01_prepare_input_data.py \
+        --source-csv <raw.csv> --vintage 20260715
     conda run -n idd-tc-mortality python scripts/ingest/01_prepare_input_data.py --dry-run
     conda run -n idd-tc-mortality python scripts/ingest/01_prepare_input_data.py --level-filter level3
     conda run -n idd-tc-mortality python scripts/ingest/01_prepare_input_data.py --level-filter aggregate
@@ -56,10 +59,10 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 # ---------------------------------------------------------------------------
-# Paths — hardcoded to the specific vintage being ingested
+# Paths — defaults, overridable via --source-csv / --vintage
 # ---------------------------------------------------------------------------
 
-SOURCE_CSV = Path(
+DEFAULT_SOURCE_CSV = Path(
     "/mnt/team/rapidresponse/pub/tropical-storms/data/ibtracs_deaths/"
     "ibtracs_stage4b_pafs_admin0_with_deaths_PSH_20260603_sdi_isisland.csv"
 )
@@ -226,9 +229,15 @@ def prepare(
     return df.reset_index(drop=True)
 
 
-def write_versioned(df: pd.DataFrame, output_node: Path) -> Path:
-    """Atomic write to dated subdirectory; update current symlink."""
-    dated_dir = output_node / date.today().strftime("%Y%m%d")
+def write_versioned(
+    df: pd.DataFrame, output_node: Path, vintage: str | None = None
+) -> Path:
+    """Atomic write to a vintage subdirectory; update current symlink.
+
+    vintage defaults to today's YYYYMMDD; pass e.g. '20260715_v2' to avoid
+    a same-day collision (a same-vintage rerun overwrites input.parquet).
+    """
+    dated_dir = output_node / (vintage or date.today().strftime("%Y%m%d"))
     dated_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = dated_dir / "input.parquet"
@@ -269,13 +278,16 @@ def main(
     dry_run: bool = False,
     level_filter: str = "all",
     min_year: int | None = None,
+    source_csv: Path = DEFAULT_SOURCE_CSV,
+    vintage: str | None = None,
 ) -> None:
-    if not SOURCE_CSV.exists():
-        print(f"ERROR: source CSV not found: {SOURCE_CSV}", file=sys.stderr)
+    if not source_csv.exists():
+        print(f"ERROR: source CSV not found: {source_csv}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Source: {SOURCE_CSV}")
+    print(f"Source: {source_csv}")
     print(f"Output node: {OUTPUT_NODE}")
+    print(f"Vintage: {vintage or date.today().strftime('%Y%m%d') + ' (today, default)'}")
     print(f"Level filter: {level_filter}")
     if min_year is not None:
         print(f"Min year: {min_year}")
@@ -284,7 +296,7 @@ def main(
     # Read with NA-safe settings (identical to old idd-climate-models data.py)
     print("Reading CSV...")
     df_raw = pd.read_csv(
-        SOURCE_CSV,
+        source_csv,
         keep_default_na=False,   # critical: prevents 'NA' (North Atlantic) -> NaN
         na_values=[""],           # only blank cells become NaN
         dtype={"basins_standard": str},    # critical: force basin to str before any NA inference
@@ -309,7 +321,7 @@ def main(
         return
 
     print("\nWriting parquet...")
-    out_path = write_versioned(df_out, OUTPUT_NODE)
+    out_path = write_versioned(df_out, OUTPUT_NODE, vintage=vintage)
     print(f"  Wrote {len(df_out):,} rows to {out_path}")
     print(f"  current -> {(OUTPUT_NODE / 'current').resolve().name}")
     print("Done.")
@@ -338,9 +350,25 @@ if __name__ == "__main__":
         default=None,
         help="If set, drop rows with year < MIN_YEAR (e.g. 2000).",
     )
+    parser.add_argument(
+        "--source-csv",
+        type=Path,
+        default=DEFAULT_SOURCE_CSV,
+        help="Raw ibtracs+deaths CSV to ingest (default: the last-used vintage).",
+    )
+    parser.add_argument(
+        "--vintage",
+        default=None,
+        help=(
+            "Name of the 00-data output subdirectory (YYYYMMDD, or e.g. "
+            "20260715_v2 for a same-day rerun). Default: today's date."
+        ),
+    )
     args = parser.parse_args()
     main(
         dry_run=args.dry_run,
         level_filter=args.level_filter,
         min_year=args.min_year,
+        source_csv=args.source_csv,
+        vintage=args.vintage,
     )
