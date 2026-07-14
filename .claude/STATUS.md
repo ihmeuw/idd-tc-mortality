@@ -1,5 +1,5 @@
 # Project status
-Updated: 2026-07-06
+Updated: 2026-07-07
 
 ## Goals
 Build a double-hurdle peaks-over-threshold model for tropical cyclone mortality estimation.
@@ -15,20 +15,19 @@ Pipeline stages: validate → grid → fit → evaluate → select → uncertain
 - **refined** — tighten the surviving combinations (per-family exposures, narrowed thresholds/covariates).
 - **final** — a *more* comprehensive fractional-factorial over the refined winners (more permutations, never "all").
 
-*Where we are:* preliminary + intermediate done on the 20260608 vintage; **refined is the next run.** Refined decision (= 20260517 post-2000): threshold ∈ {0.70, 0.85}; tail ∈ {gpd, log_logistic, weibull} with per-family exposures; bulk = scaled_logit × {free, free+weight}; s1/s2 = logit/free. Encoded in `grid/build_refined_specs_post2000.py` (336 IS specs).
-
 *Architecture.* A DH model = 4 components (s1, s2, bulk, tail), each fit then assembled + scored.
 - *Old two-step (still how 20260517 refined ran):* (1) fit all components → save `.pkl`; (2) load `.pkl` in 4s → assemble → score. Fitting is ~0.1s; *concurrent* `.pkl` reads at scale melted NFS.
 - *Re-fit-in-evaluate (current, applied to preliminary 20260608):* no fit stage, no `.pkl`. The evaluate worker re-fits each component in-memory (`run_evaluate.py` `_load` → `fit_one_component`), caching each component once per worker — redundant across workers, but contends nothing.
 
-*Refined bridge — BUILT, uncommitted (2026-06-12 work):* the migration gap is CLOSED. The evaluate **worker** re-fits in every mode, IS and OOS (each fold's four components re-fit on its training subset via `_load`→`fit_one_component`; the inline OOS loop replaced `assemble_oos_predictions`, so there is no `.pkl` read and no `load_result` anywhere on the path). Refined **orchestration** is wired end-to-end via registered CLIs: (1) `run-build-refined-specs-post2000` → 336 IS specs; (2) `run-evaluate-orchestrate --refined-specs <specs> --manifest-only` → `manifest.json` + `fold_assignments.parquet`, no submit; (3) `run-build-refined-cells` → structure-C cell manifest, one task per (s1, s2) = 512 tasks, `|s2_cov|`-tiered; (4) `run-evaluate-orchestrate --cells-file <cells> --tier-memory/--tier-runtime` → full submit. Refined cov-structure is **structure C**: s1_cov free, s2_cov free & independent of s1, then `s2 ⊇ bulk ⊇ tail` (NOT the old `build_half_coupled_multiconfig_tasks.py` chain, now superseded). Dead-and-deletable: `assemble_oos_predictions`, `cache.load_result/save_result/result_exists`.
-
 *Task-grouping lever:* under re-fit, cost = (#component fits) + (#DH-config assemblies), and each component-fit is paid once per worker. Packing configs that share fits into one worker amortizes cost — the knob for affording *more* permutations, balanced against ~20–30s/task overhead.
 
-*Prediction & deliverable phase (2026-06 onward).* Selection converged on 3 chosen death models; prediction now runs on the **consolidated CLIMADA frames** via a new pipeline (`consolidated.py` + `build_predict_cells.py` + `predict_cell.py` + `orchestrate_consolidated.py`, jobmon), per storm_draw × scenario, for two hierarchy approaches — **A0-only** and the **A1/A0 blend** (A1 admin-1 for 10 subnationalized countries + A0 for the rest, no double-count). The shipped M1 deliverable (`direct_deaths.{parquet,nc}` at rapidresponse/direct_risk) is the adjusted blend, draw-level `deaths_c1_s1_o0_b1`; its three post-processing steps are now committed as `run-finalize-deliverable`, which also builds the blend `summary.parquet` from the a0/a1 partials if absent — so a rerun is `run-predict-consolidated` (×2, a0+a1) → `run-finalize-deliverable`, no manual rollup step. Open: SR-31 hard-zero guard decision.
+*Prediction & deliverable phase (2026-06 onward).* Selection converged on 3 chosen death models; prediction runs on the **consolidated CLIMADA frames** (`run-predict-consolidated` per frame, jobmon) for **A0-only** and the **A1/A0 blend** (A1 admin-1 for 10 subnationalized countries + A0 for the rest, no double-count). The full deliverable chain is committed, two script types, no manual steps: `run-predict-consolidated` (×2, a0+a1) → `run-finalize-deliverable` (blend export → SR-median adjustment → FHS-pop rates; builds the blend `summary.parquet` on demand; `--sr31-guard` flag).
+
+*Where we are:* the **new-SDI rerun is done** — vintage `04-predict/20260706/` (M1 `6004b730…`, SDI s130v89 past+future replacing the s130v66 pair) with TWO adjusted variants: default (SR-31 hard-zeroed, = what shipped in June) and `--sr31-guard` (SR-31 ratio = 0.1 × smallest non-zero = 0.00385). Both shipped **date-stamped** to `direct_risk/` (`20260707_adjusted_direct_deaths.*` + `20260707_sr31guard_adjusted_direct_deaths.*`); the canonical `direct_deaths.{parquet,nc}` still points at the June/old-SDI version. Comparison notebook: `notebooks/20260707/sr_version_comparison.ipynb` (Global + 7 SRs × 3 versions; count/rate space via FHS pop, zoom modes, obs/pred median hlines, historical line with 2014-anchored SSP continuity). **Open: the SR-31 guard decision picks which variant becomes canonical.**
 
 ## Recent steps
-- 2026-07-06: Promoted the deliverable post-processing (blend export → super-region median adjustment → FHS-population rate merge) from ad-hoc heredocs to `src/idd_tc_mortality/predict/finalize_deliverable.py` (`run-finalize-deliverable`), recovered verbatim from the session transcript. Added `super_region_median_ratios`/`apply_super_region_adjustment` + unit test (synthetic 2-SR frame, 3/3 pass). Verified byte-identical reproduction of the shipped M1 `direct_deaths.parquet` (8,669,768 rows). Committing with the rest of the consolidated-predict pipeline.
+- 2026-07-07: New-SDI rerun end-to-end. Fixed jobmon submit 404 (cluster dropped slurmrestd v0040; `jobmon_installer_ihme` 10.11.6→10.12.2, pins updated in both repos). Ran `run-predict-consolidated` A0+A1 with s130v89 past+future SDI → `04-predict/20260706/`; `run-finalize-deliverable` ×2 (default + `--sr31-guard` → `…_blend_sr31guard/`). Shipped date-stamped deliverable pairs to `direct_risk/`. Built `notebooks/20260707/sr_version_comparison.ipynb` (uncommitted).
+- 2026-07-06: Promoted the deliverable post-processing (blend export → super-region median adjustment → FHS-population rate merge) from ad-hoc heredocs to `src/idd_tc_mortality/predict/finalize_deliverable.py` (`run-finalize-deliverable`), recovered verbatim from the session transcript. Added `super_region_median_ratios`/`apply_super_region_adjustment` + unit test (synthetic 2-SR frame, 3/3 pass). Verified byte-identical reproduction of the shipped M1 `direct_deaths.parquet` (8,669,768 rows). Committed with the rest of the consolidated-predict pipeline (`f56f570`, `eba4c43` — NOT pushed).
 - 2026-06-08: Ingested new data vintage 20260608 (post-2000 filter, basins_standard, AU=first-class); 1,903 rows → `00-data/20260608/input.parquet`
 - 2026-06-08: Preliminary fit: 22,854 IS specs (4 bundles, BUNDLE_SIZE=6570, 1G/9m) → `01-preliminary/20260608/`
 - 2026-06-08: Removed AU lon-split from predict pipeline (data_prep, predict_tc, predict_year_bin, predict/orchestrate); fixed stale fit-orchestrate probe gate (0.4→0.8×ask)
@@ -46,14 +45,10 @@ Pipeline stages: validate → grid → fit → evaluate → select → uncertain
   - **Submitted full 45,676-task predict orchestrator** for that mid at `04-predict/best_topsis_post2000/storm_draws/`. **Jobmon bind has been chugging task-metadata-add for 60+ min** — per-task DB latency is the bottleneck. A concurrent 70-task subset workflow (`--storm-draws 1 --scenarios historical`, output at `04-predict/best_topsis_post2000_sd1_hist/`) bound in seconds and completed cleanly (one expected failure at top-tier aggregate_storm_draw because it requires all 4 scenarios). Diagnostic confirms bind cost is roughly linear in task count, not a DB-availability issue. Workflow 577423 had bound the same scale before — something in the jobmon environment has changed since.
 
 ## Next steps
-**Currently ready:**
-- Refined evaluate run is ready to submit — the bridge (specs → manifest-only → cells → submit) is built; see Orientation. The bridge files are still uncommitted.
-
-**In order:**
-1. (Optional but advised) Commit the refined bridge first — 2 untracked files + a modified `run_evaluate_orchestrate.py` are real, at-risk work.
-2. Run the refined sequence: `run-build-refined-specs-post2000` → `run-evaluate-orchestrate --refined-specs … --manifest-only` → `run-build-refined-cells` → `run-evaluate-orchestrate --cells-file … --tier-memory/--tier-runtime` (reuse the 20260517 tier asks — same structure C, same 512-task scale). Add `--skip-model-predictions` unless the refined diagnostics need the per-config parquets.
-3. Uncertainty + predict for selected winner (compare against prior 20260517 post-2000 winner).
-4. Delete dead fit stage (`fit/orchestrate.py`, `run_component.py`, `save_result`/`load_result`/`result_exists` from `cache.py`, and `assemble_oos_predictions` from `evaluate/assemble.py`) — confirmed safe once validated.
+1. **Push commits `f56f570` + `eba4c43`** — the entire consolidated-predict + uncertainty + finalize subsystem is local-only.
+2. **SR-31 guard decision** (with data producer): guard vs hard-zero → promote that variant's date-stamped files to the canonical `direct_deaths.{parquet,nc}` at `direct_risk/`.
+3. Commit `notebooks/20260707/sr_version_comparison.ipynb`.
+4. Delete dead fit stage (carried; see parking lot).
 
 ## Parking lot
 **Queued — open for next longer session:**

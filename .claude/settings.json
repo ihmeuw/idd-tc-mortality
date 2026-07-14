@@ -4,7 +4,13 @@
       "Bash(grep -c '\\\\.pyc$')",
       "Bash(grep -E '\\\\.pyc$|__pycache__/')",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(python -c ' *)",
+      "Bash(ls -t /ihme/homes/bcreiner/.claude/projects/*/*.jsonl 2>/dev/null | head -50 > /tmp/transcripts.txt *)",
+      "Read(//tmp/**)",
+      "Bash(python)",
+      "Edit(/mnt/share/homes/bcreiner/repos/idd-tc-mortality/.claude/**)",
+      "Write(/mnt/share/homes/bcreiner/repos/idd-tc-mortality/.claude/**)"
     ]
   }
 }
