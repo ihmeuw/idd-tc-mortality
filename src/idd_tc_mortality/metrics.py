@@ -1,12 +1,14 @@
 """
 Predictive metrics for all four components of the double-hurdle model.
 
-Five public functions:
-  calc_s1_metrics         — binary metrics for S1 (P(deaths >= 1)), full dataset.
-  calc_s2_metrics         — binary metrics for S2 (P(rate >= threshold | S1=1)).
-  calc_continuous_metrics — MAE/RMSE/correlation for bulk or tail subset.
-  calc_s2_forward_metrics — coverage-at-X% for any_death=1 rows.
-  calc_full_model_metrics — whole-dataset metrics including false positives.
+Six public functions:
+  calc_s1_metrics          — binary metrics for S1 (P(deaths >= 1)), full dataset.
+  calc_s2_metrics          — binary metrics for S2 (P(rate >= threshold | S1=1)).
+  calc_continuous_metrics  — MAE/RMSE/correlation for bulk or tail subset.
+  calc_s2_forward_metrics  — coverage-at-X% for any_death=1 rows.
+  calc_full_model_metrics  — whole-dataset metrics including false positives.
+  calc_time_series_metrics — year-aggregate calibration: cor + OLS slope/intercept
+                             on (Σ obs by year, Σ pred by year).
 
 calc_s1_metrics and calc_s2_metrics are intentionally separate even though they
 share implementation: call sites should be explicit about which stage they are
@@ -184,6 +186,79 @@ def calc_full_model_metrics(
         out[f"coverage_rate_{x}"]  = _coverage_at_pct(yt, yp, x)
         out[f"coverage_count_{x}"] = _coverage_at_pct(yt * e, yp * e, x)
     return out
+
+
+def calc_time_series_metrics(
+    year: np.ndarray,
+    y_true_rate: np.ndarray,
+    y_pred_rate: np.ndarray,
+    exposed: np.ndarray,
+) -> dict:
+    """Year-aggregate calibration metrics for the assembled double-hurdle model.
+
+    Sums predicted and observed deaths globally per year, then fits
+    obs_y = beta_0_ts + beta_p_ts * pred_y by OLS. Ideal calibration is
+    beta_0_ts = 0 and beta_p_ts = 1 — the intercept catches systematic bias
+    that a near-1 correlation alone would miss (perfect r with slope 2 is
+    a perfectly-correlated but 2x-biased predictor).
+
+    Parameters
+    ----------
+    year:
+        Integer year per row, length n.
+    y_true_rate, y_pred_rate:
+        Observed and predicted death rates per row.
+    exposed:
+        Population exposed (positive) per row.
+
+    Returns
+    -------
+    dict with keys:
+        cor_ts     — Pearson r between Σ obs and Σ pred across years.
+        beta_0_ts  — OLS intercept of obs_y on pred_y.
+        beta_p_ts  — OLS slope of obs_y on pred_y.
+    Any of the three is NaN if there are fewer than 2 distinct years, or if
+    pred_y / obs_y has zero variance (correlation / slope undefined).
+    """
+    yt, yp, e = _validate_continuous(y_true_rate, y_pred_rate, exposed)
+    yr = np.asarray(year)
+    if len(yr) != len(yt):
+        raise ValueError(
+            f"year length {len(yr)} != y_true_rate length {len(yt)}."
+        )
+
+    unique_years, inverse = np.unique(yr, return_inverse=True)
+    obs_y  = np.zeros(len(unique_years), dtype=float)
+    pred_y = np.zeros(len(unique_years), dtype=float)
+    np.add.at(obs_y,  inverse, yt * e)
+    np.add.at(pred_y, inverse, yp * e)
+
+    nan_out = {"cor_ts": float("nan"), "beta_0_ts": float("nan"), "beta_p_ts": float("nan")}
+    if len(unique_years) < 2:
+        return nan_out
+
+    # Predictions can overflow upstream (e.g., gpd `np.exp(...)` blowing up
+    # for a bad-fitting OOS fold), producing inf/NaN in the year totals.
+    # `np.linalg.lstsq` raises on non-finite input rather than returning
+    # NaN — match the existing per-stage metrics' "degenerate input ->
+    # NaN, don't crash" convention so one bad DH config can't kill the
+    # whole worker.
+    if not (np.isfinite(pred_y).all() and np.isfinite(obs_y).all()):
+        return nan_out
+
+    pred_var_zero = float(np.var(pred_y)) == 0.0
+    obs_var_zero  = float(np.var(obs_y))  == 0.0
+    if pred_var_zero or obs_var_zero:
+        cor_ts = float("nan")
+    else:
+        cor_ts = float(np.corrcoef(pred_y, obs_y)[0, 1])
+
+    if pred_var_zero:
+        return {"cor_ts": cor_ts, "beta_0_ts": float("nan"), "beta_p_ts": float("nan")}
+
+    X = np.column_stack([np.ones_like(pred_y), pred_y])
+    coef, *_ = np.linalg.lstsq(X, obs_y, rcond=None)
+    return {"cor_ts": cor_ts, "beta_0_ts": float(coef[0]), "beta_p_ts": float(coef[1])}
 
 
 # ---------------------------------------------------------------------------

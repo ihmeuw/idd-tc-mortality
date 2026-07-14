@@ -23,6 +23,7 @@ from idd_tc_mortality.metrics import (
     calc_s1_metrics,
     calc_s2_metrics,
     calc_s2_forward_metrics,
+    calc_time_series_metrics,
 )
 
 # ---------------------------------------------------------------------------
@@ -395,3 +396,137 @@ def test_full_model_metrics_any_death_length_mismatch_raises():
     e = np.array([1e5, 1e5, 1e5])
     with pytest.raises(ValueError, match="length"):
         calc_full_model_metrics(y, y, e, np.array([1.0, 0.0]))
+
+
+# ---------------------------------------------------------------------------
+# calc_time_series_metrics
+# ---------------------------------------------------------------------------
+
+_TS_KEYS = {"cor_ts", "beta_0_ts", "beta_p_ts"}
+
+
+def _ts_inputs(per_year_obs: np.ndarray, per_year_pred: np.ndarray, n_rows_per_year: int = 3):
+    """Spread each per-year total over `n_rows_per_year` equal rows.
+    Returns (year, y_true_rate, y_pred_rate, exposed) suitable for
+    calc_time_series_metrics. Per-row exposed is constant so death rates are
+    well-defined; the per-row counts sum to the target per-year totals."""
+    years_in = np.arange(len(per_year_obs))
+    e_row    = 1e5
+    year     = np.repeat(years_in, n_rows_per_year)
+    obs_row  = np.repeat(per_year_obs  / n_rows_per_year, n_rows_per_year)
+    pred_row = np.repeat(per_year_pred / n_rows_per_year, n_rows_per_year)
+    exposed  = np.full_like(year, e_row, dtype=float)
+    return year, obs_row / e_row, pred_row / e_row, exposed
+
+
+def test_time_series_metrics_keys():
+    year, yt, yp, e = _ts_inputs(np.array([10.0, 20.0, 30.0]), np.array([12.0, 18.0, 33.0]))
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert set(out.keys()) == _TS_KEYS
+
+
+def test_time_series_perfect_calibration():
+    obs  = np.array([10.0, 30.0, 50.0, 70.0])
+    pred = obs.copy()
+    year, yt, yp, e = _ts_inputs(obs, pred)
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert out["cor_ts"]    == pytest.approx(1.0)
+    assert out["beta_0_ts"] == pytest.approx(0.0,  abs=1e-9)
+    assert out["beta_p_ts"] == pytest.approx(1.0)
+
+
+def test_time_series_scale_bias_pred_is_2x_obs():
+    # If pred = 2 * obs across years, correlation is still 1 but the slope
+    # of obs ~ beta_0 + beta_p * pred is 0.5 and the intercept is 0.
+    obs  = np.array([10.0, 30.0, 50.0, 70.0])
+    pred = 2.0 * obs
+    year, yt, yp, e = _ts_inputs(obs, pred)
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert out["cor_ts"]    == pytest.approx(1.0)
+    assert out["beta_0_ts"] == pytest.approx(0.0, abs=1e-9)
+    assert out["beta_p_ts"] == pytest.approx(0.5)
+
+
+def test_time_series_additive_bias_intercept_only():
+    # pred = obs - 5 across years: r=1, slope=1, intercept=+5 on the
+    # obs ~ beta_0 + beta_p * pred regression.
+    obs  = np.array([10.0, 30.0, 50.0, 70.0])
+    pred = obs - 5.0
+    year, yt, yp, e = _ts_inputs(obs, pred)
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert out["cor_ts"]    == pytest.approx(1.0)
+    assert out["beta_0_ts"] == pytest.approx(5.0)
+    assert out["beta_p_ts"] == pytest.approx(1.0)
+
+
+def test_time_series_within_year_rows_collapse_to_year_totals():
+    # Identical per-year totals reached two different ways (1 row of 30 vs
+    # 3 rows of 10) must give the same metrics — the function aggregates by
+    # year before fitting.
+    obs  = np.array([10.0, 30.0, 50.0])
+    pred = np.array([11.0, 28.0, 52.0])
+    a = calc_time_series_metrics(*_ts_inputs(obs, pred, n_rows_per_year=1))
+    b = calc_time_series_metrics(*_ts_inputs(obs, pred, n_rows_per_year=5))
+    for k in _TS_KEYS:
+        assert a[k] == pytest.approx(b[k])
+
+
+def test_time_series_single_year_returns_nan():
+    year = np.array([2000, 2000, 2000])
+    yt   = np.array([1e-4, 2e-4, 3e-4])
+    yp   = np.array([1e-4, 2e-4, 3e-4])
+    e    = np.array([1e5, 1e5, 1e5])
+    out  = calc_time_series_metrics(year, yt, yp, e)
+    assert np.isnan(out["cor_ts"])
+    assert np.isnan(out["beta_0_ts"])
+    assert np.isnan(out["beta_p_ts"])
+
+
+def test_time_series_zero_variance_pred_returns_nan_coefs():
+    # pred sums to the same value every year → slope/intercept undefined,
+    # correlation also undefined.
+    obs  = np.array([10.0, 30.0, 50.0, 70.0])
+    pred = np.full_like(obs, 25.0)
+    year, yt, yp, e = _ts_inputs(obs, pred)
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert np.isnan(out["cor_ts"])
+    assert np.isnan(out["beta_0_ts"])
+    assert np.isnan(out["beta_p_ts"])
+
+
+def test_time_series_empty_raises():
+    with pytest.raises(ValueError, match="empty"):
+        calc_time_series_metrics(np.array([]), np.array([]), np.array([]), np.array([]))
+
+
+def test_time_series_year_length_mismatch_raises():
+    y = np.array([1e-4, 2e-4, 3e-4])
+    e = np.array([1e5, 1e5, 1e5])
+    with pytest.raises(ValueError, match="length"):
+        calc_time_series_metrics(np.array([2000, 2001]), y, y, e)
+
+
+def test_time_series_non_finite_pred_returns_nan_not_raises():
+    # Upstream prediction overflows (e.g., gpd np.exp) can put inf into
+    # the per-row predicted rate. The function must NOT raise — it
+    # returns NaN for all three metrics, matching the existing degenerate-
+    # input convention in this module.
+    year = np.array([2000, 2000, 2001, 2001])
+    yt   = np.array([1e-4, 2e-4, 3e-4, 4e-4])
+    yp   = np.array([1e-4, np.inf, 3e-4, 4e-4])
+    e    = np.array([1e5, 1e5, 1e5, 1e5])
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert np.isnan(out["cor_ts"])
+    assert np.isnan(out["beta_0_ts"])
+    assert np.isnan(out["beta_p_ts"])
+
+
+def test_time_series_non_finite_obs_returns_nan_not_raises():
+    year = np.array([2000, 2000, 2001, 2001])
+    yt   = np.array([1e-4, np.nan, 3e-4, 4e-4])
+    yp   = np.array([1e-4, 2e-4, 3e-4, 4e-4])
+    e    = np.array([1e5, 1e5, 1e5, 1e5])
+    out = calc_time_series_metrics(year, yt, yp, e)
+    assert np.isnan(out["cor_ts"])
+    assert np.isnan(out["beta_0_ts"])
+    assert np.isnan(out["beta_p_ts"])

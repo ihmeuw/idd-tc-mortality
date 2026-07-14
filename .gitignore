@@ -32,3 +32,6 @@ env/
 
 # NFS sillyrename tombstones
 .nfs*
+
+# Dated .bak backups (bak-before-edit convention)
+*.bak.*

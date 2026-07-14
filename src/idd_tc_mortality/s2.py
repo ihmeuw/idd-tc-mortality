@@ -112,9 +112,15 @@ def predict(
     eta = np.asarray(X) @ result.params
     link = result.meta.get("link", "cloglog")
     if link == "cloglog":
-        return 1.0 - np.exp(-np.exp(eta))
+        # 1 - exp(-exp(eta)) saturates to 1 for large eta; clip the inner
+        # exp argument at 700 (just below float64 overflow at ~709) and
+        # use -expm1 for the outer step for accuracy at small eta.
+        inner = np.exp(np.minimum(eta, 700.0))
+        return -np.expm1(-inner)
     else:
-        return 1.0 / (1.0 + np.exp(-eta))
+        # Logistic, written via expit for stability at large |eta|.
+        from scipy.special import expit
+        return expit(eta)
 
 
 # ---------------------------------------------------------------------------
