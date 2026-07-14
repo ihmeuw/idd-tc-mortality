@@ -18,7 +18,7 @@ matplotlib = "*"
 seaborn = "*"
 scikit-learn = "*"
 ipykernel = "^7.2.0"
-jobmon_installer_ihme = "==10.11.6"  # IHME Jobmon workflow installer — exact pin per STANDARDS.md §Environment
+jobmon_installer_ihme = "==10.12.2"  # IHME Jobmon workflow installer — exact pin per STANDARDS.md §Environment
 xarray = "^2026.4.0"
 netCDF4 = "*"
 cartopy = "^0.25.0"
