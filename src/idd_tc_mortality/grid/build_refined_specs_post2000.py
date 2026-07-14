@@ -41,9 +41,32 @@ import logging
 from pathlib import Path
 
 import click
+import numpy as np
+
+from idd_tc_mortality.constants import QUANTILE_LEVELS
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def snap_to_quantile_levels(thresholds: list[float]) -> list[float]:
+    """Snap requested thresholds to the canonical QUANTILE_LEVELS floats.
+
+    The pipeline keys thresholds by np.linspace values, where e.g. 0.80 is
+    stored as 0.7999999999999999. A CLI-parsed exact 0.8 would KeyError in
+    the orchestrator's threshold_map and mismatch dh_results joins, so every
+    requested threshold must resolve to its canonical representation.
+    """
+    snapped: list[float] = []
+    for q in thresholds:
+        j = int(np.argmin(np.abs(QUANTILE_LEVELS - q)))
+        if abs(float(QUANTILE_LEVELS[j]) - q) > 1e-6:
+            raise ValueError(
+                f"threshold {q} is not one of QUANTILE_LEVELS "
+                f"{[round(float(x), 4) for x in QUANTILE_LEVELS]}"
+            )
+        snapped.append(float(QUANTILE_LEVELS[j]))
+    return snapped
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +186,7 @@ def build_specs(thresholds: list[float]) -> list[dict]:
 )
 def main(output_path: str, thresholds: tuple[float, ...]) -> None:
     """Build the post-2000 refined-grid IS spec list and write it to JSON."""
-    specs = build_specs(list(thresholds))
+    specs = build_specs(snap_to_quantile_levels(list(thresholds)))
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(specs, indent=2))
