@@ -258,23 +258,77 @@ def build_population(
 # Observed deaths (training data)
 # ---------------------------------------------------------------------------
 
-def build_observed_deaths(obs_path: str, ancestor_map: pd.DataFrame) -> pd.DataFrame:
-    """Load training-data observed deaths, collapse storm dim, aggregate up hierarchy.
+def aggregate_observed_deaths(obs_raw: pd.DataFrame,
+                              ancestor_map: pd.DataFrame) -> pd.DataFrame:
+    """Collapse the storm dim and roll observed deaths up the hierarchy.
 
-    Output is (location_id, year, deaths) summed across ancestors. The training
-    data has one row per (location, year, storm); we sum storms within
-    (location, year), then ancestor-aggregate to roll up to region / super-region
-    / Global.
+    ``obs_raw`` needs (location_id, year, deaths) — one row per
+    (location, year, storm). Sums storms within (location, year), then
+    ancestor-aggregates to roll up to region / super-region / Global. Output is
+    (location_id, year, deaths).
     """
-    obs_raw = pd.read_parquet(obs_path, columns=['location_id', 'year', 'deaths'])
     return (
-        obs_raw
+        obs_raw[['location_id', 'year', 'deaths']]
         .groupby(['location_id', 'year'], as_index=False)['deaths'].sum()
         .merge(ancestor_map, on='location_id')
         .drop(columns='location_id')
         .rename(columns={'ancestor': 'location_id'})
         .groupby(['location_id', 'year'], as_index=False)['deaths'].sum()
     )
+
+
+def build_observed_deaths(obs_path: str, ancestor_map: pd.DataFrame) -> pd.DataFrame:
+    """Load training-data observed deaths (input.parquet) and aggregate up.
+
+    Thin reader over :func:`aggregate_observed_deaths`; the parquet is the model's
+    filtered training data, so its year range is whatever the ingest produced
+    (the current vintage is 2000-2023).
+    """
+    obs_raw = pd.read_parquet(obs_path, columns=['location_id', 'year', 'deaths'])
+    return aggregate_observed_deaths(obs_raw, ancestor_map)
+
+
+# Row filters that define a modeling observation, mirroring
+# scripts/ingest/01_prepare_input_data.py (kept in sync by hand; see that script).
+_OBS_MAX_YEAR = 2023      # exclude 2024+ (incomplete data)
+_OBS_MIN_EXPOSED = 1      # drop zero/missing exposure
+
+
+def filter_source_observations(raw: pd.DataFrame,
+                               min_year: int | None = None) -> pd.DataFrame:
+    """Apply the ingest's row filters to a raw ibtracs+deaths frame.
+
+    Mirrors ``01_prepare_input_data.py``: year<=2023, person_storm_hours>=1,
+    low_exposure_flag!=1, plus an optional ``min_year`` floor (None = no floor,
+    i.e. the full source history). Returns (location_id, year, deaths) with an
+    integer location_id, ready for :func:`aggregate_observed_deaths`.
+    """
+    mask = (
+        (raw['year'] <= _OBS_MAX_YEAR)
+        & (raw['person_storm_hours'] >= _OBS_MIN_EXPOSED)
+        & (raw['low_exposure_flag'] != 1)
+    )
+    if min_year is not None:
+        mask &= raw['year'] >= min_year
+    out = raw.loc[mask].rename(columns={'total_deaths': 'deaths'})[
+        ['location_id', 'year', 'deaths']].copy()
+    out['location_id'] = out['location_id'].astype(int)
+    return out
+
+
+def build_observed_deaths_from_source_csv(source_csv: str, ancestor_map: pd.DataFrame,
+                                          min_year: int | None = None) -> pd.DataFrame:
+    """Full-history observed deaths straight from the raw ibtracs+deaths CSV.
+
+    Reads the source CSV with the ingest's NA-safe settings, applies
+    :func:`filter_source_observations` (default ``min_year=None`` keeps the whole
+    source history, e.g. 1980-2023), and aggregates up the hierarchy. Lets a plot
+    show pre-training-window years WITHOUT rebuilding the model's input.parquet.
+    """
+    raw = pd.read_csv(source_csv, keep_default_na=False, na_values=[''],
+                      dtype={'basins_standard': str})
+    return aggregate_observed_deaths(filter_source_observations(raw, min_year),
+                                     ancestor_map)
 
 
 # ---------------------------------------------------------------------------

@@ -5,8 +5,9 @@ deliverable (``/mnt/team/rapidresponse/pub/tropical-storms/direct_risk/direct_de
 
     (a) blend export             -> draw-level A1/A0-blended deaths for one toggle
                                     cell, columns renamed to deliverable names
-    (b) super-region median adj  -> scale each location by its super-region's
-                                    observed/predicted median ratio; reroll Global
+    (b) super-region rake        -> scale each location by its super-region's
+                                    observed/predicted central-tendency ratio
+                                    (median by default, or mean); reroll Global
     (c) FHS-population rate merge -> attach FHS population + death_rate (per 100k)
 
 and writes ``draw_level_<cell>_ssp_{unadjusted,adjusted}.{parquet,nc}``.
@@ -108,32 +109,35 @@ def load_or_build_blend_summary(summary_path, a0_dir, a1_dir, hierarchy_df,
     return summary
 
 
-def super_region_median_ratios(summary: pd.DataFrame, obs_by_loc: pd.DataFrame,
-                               hierarchy_df: pd.DataFrame, cell: str,
-                               ref_scenarios, obs_years, sr31_guard: bool = False
-                               ) -> pd.Series:
-    """obs_median / pred_median per super-region (level 1) for one cell.
+def super_region_ratios(summary: pd.DataFrame, obs_by_loc: pd.DataFrame,
+                        hierarchy_df: pd.DataFrame, cell: str,
+                        ref_scenarios, obs_years, sr31_guard: bool = False,
+                        statistic: str = "median") -> pd.Series:
+    """obs / pred central-tendency ratio per super-region (level 1) for one cell.
 
-    obs_median  = median observed super-region deaths over ``obs_years``.
-    pred_median = median of the blend summary ``mean`` over ``ref_scenarios`` x
-                  ``obs_years``.
+    ``statistic`` ("median" or "mean") is the aggregator applied over the
+    observation window to BOTH series:
+        obs_stat  = <statistic> observed super-region deaths over ``obs_years``.
+        pred_stat = <statistic> of the blend summary ``mean`` over
+                    ``ref_scenarios`` x ``obs_years``.
+    Default "median" reproduces the shipped 2026-06-24 deliverable.
 
-    A super-region with 0 observed median gets ratio 0 (its deaths hard-zeroed)
-    unless ``sr31_guard`` replaces a 0 ratio with 0.1 x the smallest non-zero
-    ratio (the old 20260515-notebook behavior).
+    A super-region whose observed statistic is 0 gets ratio 0 (its deaths
+    hard-zeroed) unless ``sr31_guard`` replaces a 0 ratio with 0.1 x the
+    smallest non-zero ratio (the old 20260515-notebook behavior).
     """
     y0, y1 = obs_years
     lvl = hierarchy_df[["location_id", "level", "super_region_id"]]
     s = summary.merge(lvl, on="location_id", how="left")
     obs = obs_by_loc.merge(hierarchy_df[["location_id", "level"]], on="location_id",
                            how="left")
-    obs_med = (obs[(obs["level"] == 1) & (obs["year"].between(y0, y1))]
-               .groupby("location_id")["deaths"].median())
-    pred_med = (s[(s["level"] == 1) & (s["cell"] == cell)
-                  & (s["experiment_id"].isin(list(ref_scenarios)))
-                  & (s["year"].between(y0, y1))]
-                .groupby("location_id")["mean"].median())
-    ratio = (obs_med / pred_med).replace([np.inf, -np.inf], np.nan)
+    obs_stat = (obs[(obs["level"] == 1) & (obs["year"].between(y0, y1))]
+                .groupby("location_id")["deaths"].agg(statistic))
+    pred_stat = (s[(s["level"] == 1) & (s["cell"] == cell)
+                   & (s["experiment_id"].isin(list(ref_scenarios)))
+                   & (s["year"].between(y0, y1))]
+                 .groupby("location_id")["mean"].agg(statistic))
+    ratio = (obs_stat / pred_stat).replace([np.inf, -np.inf], np.nan)
     if sr31_guard:
         nonzero_min = ratio[ratio > 0].min()
         ratio = ratio.mask(ratio == 0, 0.1 * nonzero_min)
@@ -225,19 +229,30 @@ def _write_nc(df: pd.DataFrame, path: str, pop2: pd.Series) -> None:
     ds.to_netcdf(path, encoding={v: {"zlib": True, "complevel": 4} for v in ds.data_vars})
 
 
-def write_deliverable(unadjusted: pd.DataFrame, adjusted: pd.DataFrame,
-                      pop: pd.DataFrame, out_dir, cell: str) -> list[Path]:
-    """Write the four ``draw_level_<cell>_ssp_{unadjusted,adjusted}.{parquet,nc}`` files."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    pop2 = (pop.drop_duplicates(["location_id", "year_id"])
+def population_index(pop: pd.DataFrame) -> pd.Series:
+    """(year_id, location_id) -> population, deduped — the index ``_write_nc`` needs."""
+    return (pop.drop_duplicates(["location_id", "year_id"])
             .set_index(["year_id", "location_id"])["population"])
+
+
+def write_draw_level(df: pd.DataFrame, base_path, pop2: pd.Series) -> list[Path]:
+    """Write one draw-level frame as ``<base_path>.parquet`` + ``<base_path>.nc``."""
+    base_path = Path(base_path)
+    base_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_parquet(df, base_path.with_suffix(".parquet"))
+    _write_nc(df, str(base_path.with_suffix(".nc")), pop2)
+    return [base_path.with_suffix(".parquet"), base_path.with_suffix(".nc")]
+
+
+def write_deliverable(unadjusted: pd.DataFrame, adjusted: pd.DataFrame,
+                      pop: pd.DataFrame, out_dir, cell: str,
+                      adjusted_tag: str = "adjusted") -> list[Path]:
+    """Write the four ``draw_level_<cell>_ssp_{unadjusted,<adjusted_tag>}.{parquet,nc}`` files."""
+    out_dir = Path(out_dir)
+    pop2 = population_index(pop)
     written: list[Path] = []
-    for tag, df in (("unadjusted", unadjusted), ("adjusted", adjusted)):
-        base = out_dir / f"draw_level_{cell}_ssp_{tag}"
-        atomic_write_parquet(df, base.with_suffix(".parquet"))
-        _write_nc(df, str(base.with_suffix(".nc")), pop2)
-        written += [base.with_suffix(".parquet"), base.with_suffix(".nc")]
+    for tag, df in (("unadjusted", unadjusted), (adjusted_tag, adjusted)):
+        written += write_draw_level(df, out_dir / f"draw_level_{cell}_ssp_{tag}", pop2)
     return written
 
 
@@ -282,9 +297,14 @@ def _csv(value: str) -> list[str]:
 @click.option("--sr31-guard/--no-sr31-guard", default=False, show_default=True,
               help="Replace a 0 super-region ratio with 0.1 x smallest non-zero ratio. "
                    "Default (--no-sr31-guard) = what shipped 2026-06-24.")
+@click.option("--rake-stat", type=click.Choice(["median", "mean"]), default="median",
+              show_default=True,
+              help="Central-tendency statistic for the super-region rake ratio. "
+                   "Default (median) = what shipped 2026-06-24; 'mean' suffixes the "
+                   "adjusted filename with _mean so it does not clobber the median file.")
 def main(pred_root, mid, a0_dir, a1_dir, blend_dir, out_dir, summary_path, storm_draw_table,
          cell, scenarios, hierarchy_path, obs_path, past_pop_path, future_pop_path,
-         ref_scenarios, obs_year_start, obs_year_end, split_year, sr31_guard):
+         ref_scenarios, obs_year_start, obs_year_end, split_year, sr31_guard, rake_stat):
     a0_dir = a0_dir or pred_root / f"{mid}_a0"
     a1_dir = a1_dir or pred_root / f"{mid}_a1"
     blend_dir = blend_dir or pred_root / f"{mid}_blend"
@@ -302,13 +322,14 @@ def main(pred_root, mid, a0_dir, a1_dir, blend_dir, out_dir, summary_path, storm
                 len(unadj), unadj["storm_draw"].nunique(), unadj["location_id"].nunique(),
                 unadj["year_id"].min(), unadj["year_id"].max())
 
-    logger.info("(b) super-region median adjustment (guard=%s)", sr31_guard)
+    logger.info("(b) super-region %s adjustment (guard=%s)", rake_stat, sr31_guard)
     summary = load_or_build_blend_summary(summary_path, a0_dir, a1_dir, hierarchy_df,
                                           storm_draw_table)
     amap = build_ancestor_map(hierarchy_df)
     obs = build_observed_deaths(str(obs_path), amap)
-    ratios = super_region_median_ratios(summary, obs, hierarchy_df, cell,
-                                        ref_scenarios, obs_years, sr31_guard=sr31_guard)
+    ratios = super_region_ratios(summary, obs, hierarchy_df, cell,
+                                 ref_scenarios, obs_years, sr31_guard=sr31_guard,
+                                 statistic=rake_stat)
     logger.info("    ratios: %s", {int(k): round(v, 4) for k, v in ratios.dropna().items()})
     adj = apply_super_region_adjustment(unadj, ratios, hierarchy_df)
 
@@ -324,7 +345,8 @@ def main(pred_root, mid, a0_dir, a1_dir, blend_dir, out_dir, summary_path, storm
     logger.info("    location pop coverage: %.0f%%",
                 100 * adj.drop_duplicates("location_id")["population"].notna().mean())
 
-    for p in write_deliverable(unadj, adj, pop, out_dir, cell):
+    adjusted_tag = "adjusted" if rake_stat == "median" else f"adjusted_{rake_stat}"
+    for p in write_deliverable(unadj, adj, pop, out_dir, cell, adjusted_tag=adjusted_tag):
         logger.info("wrote %s", p)
 
 

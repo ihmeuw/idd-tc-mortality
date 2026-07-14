@@ -1,9 +1,10 @@
 """Tests for the deliverable-finalization median adjustment.
 
 Covers, on a synthetic 2-super-region hierarchy:
-  - super_region_median_ratios: obs_median / pred_median per super-region, with
-    a 0-observed super-region -> ratio 0 by default, and the --sr31-guard
-    replacement (0 -> 0.1 x smallest non-zero ratio).
+  - super_region_ratios: obs / pred central-tendency ratio per super-region, for
+    both statistic="median" (default) and statistic="mean", with a 0-observed
+    super-region -> ratio 0 by default, and the --sr31-guard replacement
+    (0 -> 0.1 x smallest non-zero ratio).
   - apply_super_region_adjustment: each location scaled by ITS super-region's
     ratio, unmapped super-regions left unscaled, and Global recomputed as the
     sum of the adjusted super-regions (hierarchy stays consistent).
@@ -17,7 +18,7 @@ import pytest
 
 from idd_tc_mortality.predict.finalize_deliverable import (
     apply_super_region_adjustment,
-    super_region_median_ratios,
+    super_region_ratios,
 )
 
 # Synthetic FHS-shaped hierarchy: Global(1) over super-regions A(100) and B(200),
@@ -56,15 +57,53 @@ def test_super_region_median_ratios_and_guard():
         }
     )
 
-    ratio = super_region_median_ratios(summary, obs, HIERARCHY, cell, ref, obs_years)
+    # Default statistic is median.
+    ratio = super_region_ratios(summary, obs, HIERARCHY, cell, ref, obs_years)
     assert ratio.loc[100] == pytest.approx(20.0 / 50.0)   # 0.4
     assert ratio.loc[200] == pytest.approx(0.0)           # 0 observed -> hard zero
 
-    guarded = super_region_median_ratios(
+    guarded = super_region_ratios(
         summary, obs, HIERARCHY, cell, ref, obs_years, sr31_guard=True
     )
     assert guarded.loc[100] == pytest.approx(0.4)          # non-zero unchanged
     assert guarded.loc[200] == pytest.approx(0.1 * 0.4)    # 0 -> 0.1 x smallest non-zero
+
+
+def test_super_region_ratios_mean_statistic():
+    cell = "deaths_c1_s1_o0_b1"
+    ref = ["historical"]
+    obs_years = (2000, 2001)
+
+    # A mean = mean(10, 30) = 20 ; B mean = mean(0, 8) = 4 (nonzero even though the
+    # B median is 0 — this is exactly the SR-31 case where mean-raking sidesteps
+    # the hard-zero and the guard becomes a no-op).
+    obs = pd.DataFrame(
+        {
+            "location_id": [100, 100, 200, 200],
+            "year":        [2000, 2001, 2000, 2001],
+            "deaths":      [10.0, 30.0, 0.0, 8.0],
+        }
+    )
+    # A mean = mean(40, 60) = 50 ; B mean = mean(5, 15) = 10.
+    summary = pd.DataFrame(
+        {
+            "location_id":   [100, 100, 200, 200],
+            "cell":          [cell] * 4,
+            "experiment_id": ["historical"] * 4,
+            "year":          [2000, 2001, 2000, 2001],
+            "mean":          [40.0, 60.0, 5.0, 15.0],
+        }
+    )
+
+    ratio = super_region_ratios(summary, obs, HIERARCHY, cell, ref, obs_years,
+                                statistic="mean")
+    assert ratio.loc[100] == pytest.approx(20.0 / 50.0)   # 0.4
+    assert ratio.loc[200] == pytest.approx(4.0 / 10.0)    # 0.4, nonzero via the mean
+
+    # With a nonzero mean ratio, the guard leaves both super-regions untouched.
+    guarded = super_region_ratios(summary, obs, HIERARCHY, cell, ref, obs_years,
+                                  statistic="mean", sr31_guard=True)
+    assert guarded.loc[200] == pytest.approx(0.4)
 
 
 def test_apply_super_region_adjustment_scales_and_rerolls_global():
