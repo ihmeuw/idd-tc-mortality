@@ -39,6 +39,7 @@ import pandas as pd
 from idd_tc_mortality.distributions import get_family
 from idd_tc_mortality.distributions.base import FitResult
 from idd_tc_mortality.features import align_X, build_X
+from idd_tc_mortality.tail_cap import excess_cap
 from idd_tc_mortality.thresholds import compute_thresholds
 from idd_tc_mortality import s1 as s1_mod
 from idd_tc_mortality import s2 as s2_mod
@@ -130,6 +131,13 @@ def predict_one_component(
 
         if family_info["log_exposed"]:
             preds = pred_fn(result, X, log_exposed)
+        elif family_info.get("needs_cap"):
+            # Cap-aware tail variant (censored / shadow mean). Pass the per-row
+            # excess-scale physical cap H_i = c_i - threshold_rate, where
+            # c_i = exposed_population / exposed. threshold_rate is guaranteed set
+            # here (component is tail). The family returns an excess-rate central
+            # estimate; the tail_outcome:"excess" branch below adds threshold_rate back.
+            preds = pred_fn(result, X, excess_cap(df, threshold_rate))
         else:
             preds = pred_fn(result, X)
 

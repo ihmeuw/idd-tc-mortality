@@ -26,12 +26,22 @@ def _build_registry() -> dict[str, dict[str, Callable]]:
     from idd_tc_mortality.distributions import truncated_normal  # noqa: PLC0415
     from idd_tc_mortality.distributions import weibull  # noqa: PLC0415
     from idd_tc_mortality.distributions import log_logistic  # noqa: PLC0415
+    from idd_tc_mortality.distributions import weibull_mean  # noqa: PLC0415
+    from idd_tc_mortality.distributions import gpd_cens  # noqa: PLC0415
+    from idd_tc_mortality.distributions import log_logistic_cens  # noqa: PLC0415
+    from idd_tc_mortality.distributions import gpd_shadow  # noqa: PLC0415
+    from idd_tc_mortality.distributions import log_logistic_shadow  # noqa: PLC0415
     # tail_outcome: "excess" means the distribution is fit on (death_rate - threshold)
     # and predict() returns excess rates. predict_component adds threshold_rate back.
     # Absent key = not a tail rate family (bulk-only, count model, or raw-rate tail).
     # truncated_normal has no tail_outcome flag: it fits on raw log(rate), not excess_rate.
     # fit_component.py special-cases it (like beta/scaled_logit) to pass threshold_rate and
     # truncation_side directly.
+    #
+    # needs_cap: True marks a bounded/finite-mean tail variant whose predict() takes a
+    # third argument — the per-row excess-scale physical cap H_i = c_i - threshold_rate
+    # (see tail_cap.excess_cap). predict_component supplies it. These variants form the
+    # parallel bounded-tail selection run and leave the base families untouched.
     return {
         "gamma":             {"fit": gamma.fit,             "predict": gamma.predict,             "log_exposed": False, "tail_outcome": "excess"},
         "lognormal":         {"fit": lognormal.fit,         "predict": lognormal.predict,         "log_exposed": False, "tail_outcome": "excess"},
@@ -43,6 +53,12 @@ def _build_registry() -> dict[str, dict[str, Callable]]:
         "truncated_normal":  {"fit": truncated_normal.fit,  "predict": truncated_normal.predict,  "log_exposed": False},
         "weibull":           {"fit": weibull.fit,           "predict": weibull.predict,           "log_exposed": False, "tail_outcome": "excess"},
         "log_logistic":      {"fit": log_logistic.fit,      "predict": log_logistic.predict,      "log_exposed": False, "tail_outcome": "excess"},
+        # Bounded / finite-mean tail variants (parallel selection run; base families above untouched).
+        "weibull_mean":      {"fit": weibull_mean.fit,      "predict": weibull_mean.predict,      "log_exposed": False, "tail_outcome": "excess"},
+        "gpd_cens":          {"fit": gpd_cens.fit,          "predict": gpd_cens.predict,          "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
+        "log_logistic_cens": {"fit": log_logistic_cens.fit, "predict": log_logistic_cens.predict, "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
+        "gpd_shadow":        {"fit": gpd_shadow.fit,        "predict": gpd_shadow.predict,        "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
+        "log_logistic_shadow": {"fit": log_logistic_shadow.fit, "predict": log_logistic_shadow.predict, "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
     }
 
 

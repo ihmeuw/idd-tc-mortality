@@ -38,6 +38,7 @@ import pandas as pd
 from idd_tc_mortality.distributions import get_family
 from idd_tc_mortality.distributions.base import FitResult
 from idd_tc_mortality.features import build_X
+from idd_tc_mortality.tail_cap import excess_cap
 from idd_tc_mortality.thresholds import compute_thresholds
 from idd_tc_mortality import s1 as s1_mod
 from idd_tc_mortality import s2 as s2_mod
@@ -227,6 +228,13 @@ def _fit_one_component(spec: dict, df: pd.DataFrame) -> FitResult:
         _pos = y_excess[y_excess > 0]
         _floor = _pos.min() / 2 if len(_pos) > 0 else threshold_rate * 1e-6
         y_excess = np.maximum(y_excess, _floor)
+
+        # Variant A (shadow-mean) fits need each tail storm's excess cap H_i = c_i - u
+        # (c_i = exposed_population / exposed). Passed as a 4th arg, analogous to the
+        # truncated_normal special-case above. Every other excess-rate family takes
+        # (X, y_excess, weights).
+        if family_name in ("gpd_shadow", "log_logistic_shadow"):
+            return family_info["fit"](X, y_excess, weights, excess_cap(df_sub, threshold_rate))
         return family_info["fit"](X, y_excess, weights)
 
     # Unreachable: guard above already raises for unknown component types.
