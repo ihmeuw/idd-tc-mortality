@@ -31,6 +31,8 @@ def _build_registry() -> dict[str, dict[str, Callable]]:
     from idd_tc_mortality.distributions import log_logistic_cens  # noqa: PLC0415
     from idd_tc_mortality.distributions import gpd_shadow  # noqa: PLC0415
     from idd_tc_mortality.distributions import log_logistic_shadow  # noqa: PLC0415
+    from idd_tc_mortality.distributions import gpd_trunc  # noqa: PLC0415 — variant B spike
+    from idd_tc_mortality.distributions import log_logistic_trunc  # noqa: PLC0415 — variant B spike
     # tail_outcome: "excess" means the distribution is fit on (death_rate - threshold)
     # and predict() returns excess rates. predict_component adds threshold_rate back.
     # Absent key = not a tail rate family (bulk-only, count model, or raw-rate tail).
@@ -59,6 +61,10 @@ def _build_registry() -> dict[str, dict[str, Callable]]:
         "log_logistic_cens": {"fit": log_logistic_cens.fit, "predict": log_logistic_cens.predict, "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
         "gpd_shadow":        {"fit": gpd_shadow.fit,        "predict": gpd_shadow.predict,        "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
         "log_logistic_shadow": {"fit": log_logistic_shadow.fit, "predict": log_logistic_shadow.predict, "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
+        # Variant B (renormalized truncated likelihood) — validated on hard-truncated real data
+        # (identifiable shape, analytic gradient); folds into the honest tail sweep alongside A/C/D.
+        "gpd_trunc":         {"fit": gpd_trunc.fit,         "predict": gpd_trunc.predict,         "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
+        "log_logistic_trunc": {"fit": log_logistic_trunc.fit, "predict": log_logistic_trunc.predict, "log_exposed": False, "tail_outcome": "excess", "needs_cap": True},
     }
 
 

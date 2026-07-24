@@ -229,11 +229,13 @@ def _fit_one_component(spec: dict, df: pd.DataFrame) -> FitResult:
         _floor = _pos.min() / 2 if len(_pos) > 0 else threshold_rate * 1e-6
         y_excess = np.maximum(y_excess, _floor)
 
-        # Variant A (shadow-mean) fits need each tail storm's excess cap H_i = c_i - u
-        # (c_i = exposed_population / exposed). Passed as a 4th arg, analogous to the
-        # truncated_normal special-case above. Every other excess-rate family takes
+        # Cap-at-fit families need each tail storm's excess cap H_i = c_i - u
+        # (c_i = exposed_population / exposed), passed as a 4th arg (like the
+        # truncated_normal special-case above): variant A shadow-mean fits build the
+        # per-storm fraction g_i = w_i/H_i, and variant B truncated-likelihood fits
+        # bound each storm's likelihood at H_i. Every other excess-rate family takes
         # (X, y_excess, weights).
-        if family_name in ("gpd_shadow", "log_logistic_shadow"):
+        if family_name in ("gpd_shadow", "log_logistic_shadow", "gpd_trunc", "log_logistic_trunc"):
             return family_info["fit"](X, y_excess, weights, excess_cap(df_sub, threshold_rate))
         return family_info["fit"](X, y_excess, weights)
 
