@@ -1,0 +1,539 @@
+---
+title: "Estimating the Mean of a Bounded Heavy Tail"
+subtitle: "Truncation, censoring, and the dual-transform: a synthesis for tropical-cyclone mortality tail modelling"
+author: "Prepared for R. C. Reiner Jr. (idd-tc-mortality)"
+date: today
+abstract: |
+  A tail model that fits a heavy-tailed family (GPD, log-logistic) to storm
+  mortality can produce an infinite or near-infinite estimated mean when the
+  fitted shape implies a tail index $\alpha \le 1$ ($\xi \ge 1$), even though the
+  outcome is physically bounded (deaths cannot exceed the exposed population).
+  This document reviews the three principled routes to a finite, well-behaved
+  mean under a *known* upper bound: (A) the Cirillo--Taleb dual-distribution
+  "shadow mean"; (B) a renormalised truncated likelihood in the sense of Aban,
+  Meerschaert & Panorska; and (C) censoring at the physical cap. It derives the
+  estimator and mean for each, states the assumptions each makes about the
+  unobserved region between the data and the cap, and locates the present
+  application within the soft- vs. hard-truncation taxonomy of Chakrabarty &
+  Samorodnitsky. The central conclusion is that the storm-mortality problem sits
+  in the *hard*-truncation regime, where the physical bound materially reshapes
+  the tail and a finite mean is stable and data-supported --- the regime in which
+  (B) and (C) are appropriate and the dual transform (A), a soft-regime tool, is
+  the sensitivity probe rather than the default.
+bibliography: references.bib
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    html-math-method: mathjax
+    theme: cosmo
+    fig-cap-location: bottom
+  pdf:
+    toc: true
+    number-sections: true
+    documentclass: article
+    geometry: margin=1in
+    keep-tex: false
+---
+
+# The problem {#sec-problem}
+
+## Setup and notation {#sec-notation}
+
+Let each storm $i$ contribute an observed death count $D_i$ and an exposure
+$E_i$. In the `idd-tc-mortality` pipeline the modelled quantity is a **rate**
+
+$$
+r_i = \frac{D_i}{E_i},
+$$ {#eq-rate}
+
+where $E_i$ is *person--storm--hours* (PSH), not a simple headcount. A separate
+column, `exposed_population` $= P_i$, records the number of people exposed. The
+physical constraint is $D_i \le P_i$: a storm cannot kill more people than are
+present. Expressed on the rate scale of @eq-rate this becomes a **storm-specific
+upper bound**
+
+$$
+r_i \;\le\; c_i \;=\; \frac{P_i}{E_i},
+$$ {#eq-cap}
+
+which varies across storms because the ratio of headcount to person--storm--hours
+depends on storm duration and exposure geometry. The tail stage is fit on the
+**excess rate** over a threshold $u$ (`threshold_rate`),
+
+$$
+w_i = r_i - u \ge 0,
+$$ {#eq-excess}
+
+and the threshold is added back at prediction time. Because the excess-rate
+families are defined with support beginning at $0$, we have $F(0)=0$ for every
+family; there is no left-truncation term to carry. The cap on the excess scale is
+$c_i - u$.
+
+::: {.callout-important}
+## The two scales must be reconciled
+
+The threshold $u$ is defined historically in rate-per-PSH units, and the cap
+$c_i = P_i/E_i$ is *also* a rate-per-PSH quantity (it is the rate at which the
+entire exposed population dies). Both therefore live in the same space and the
+truncation quantity $F(c_i - u) - F(0) = F(c_i - u)$ is coherent. This
+reconciliation is *only* automatic because the cap is expressed as $P_i/E_i$ on
+the same rate scale as $u$; naively capping a *fraction* $D_i/P_i$ at $1$ while
+thresholding a *rate* $D_i/E_i$ would mix two scales and silently corrupt the
+normaliser.
+:::
+
+## Why an unbounded fit gives an infinite mean {#sec-infinite}
+
+A generalized Pareto tail has survival function
+$\bar F(w) = (1 + \xi w/\sigma)^{-1/\xi}$ and, writing $\alpha = 1/\xi$, its
+$p$-th moment is finite **iff** $\xi < 1/p$, equivalently $\alpha > p$
+[@embrechts1997modelling; @dehaan2006extreme]. Thus the mean exists only for
+$\xi < 1$ ($\alpha > 1$). The log-logistic AFT tail behaves identically: with
+shape $k$ its mean is undefined for $k \le 1$. When the fitted tail index sits at
+$\alpha \approx 0.7$ (so $\xi \approx 1.43$), the fitted latent distribution has
+**no finite first moment**. A point prediction from such a fit is necessarily a
+*median* (or another low quantile), because that is the only central summary that
+exists --- which is exactly what the current pipeline reports for its MLE'd
+AFT/EVT families.
+
+The consequence for evaluation is structural, not cosmetic: an out-of-sample
+target formed by summing observed deaths is a finite, mean-like quantity, but the
+predicted central value from an $\alpha \le 1$ fit corresponds to a median. Any
+ratio-style calibration gate then compares a mean-like numerator to a median-like
+denominator, and for a right-skewed tail the median is far below the mean. This
+is the mechanism by which the downstream super-region "rake" acquires its
+load-bearing role: it is silently repairing a mean/median mismatch created
+upstream.
+
+::: {.callout-note}
+## The bound dissolves the paradox
+
+A distribution with **bounded support has finite moments of all orders**,
+regardless of how heavy the tail *looks* over the observed range
+[@cirillo2020tail]. The apparent infinite mean is an artefact of extrapolating an
+unbounded family past a bound that in fact exists. Every method below is a
+different disciplined way of imposing that bound; they differ in *how* they treat
+the unobserved region between the largest observation and the cap.
+:::
+
+## The data geometry that decides everything {#sec-geometry}
+
+The largest observed per-capita death fraction in the storm data is
+$\max_i D_i/P_i \approx 0.2$; roughly $70\%$ of storms have zero deaths and are
+handled upstream by the hurdle stages. The cap in fraction terms is $1$, so the
+observed data reach only about one-fifth of the way to the cap, and the two
+catastrophic storms that dominate the death total (2008 Nargis; 1991 Bangladesh /
+Gorky) are *not* the maxima on the per-capita fraction scale --- they are extreme
+in absolute deaths, not in fraction of exposed. The unobserved region on the
+fraction scale spans roughly $[0.2,\,1]$, i.e. under one order of magnitude. As
+@sec-regime shows, this "how far is the cap from the data" ratio is the single
+quantity that determines which method is appropriate.
+
+# Method A --- the dual-distribution shadow mean {#sec-A}
+
+## Construction {#sec-A-construction}
+
+@taleb2016shadow and @cirillo2020tail address exactly the apparent-infinite-mean
+problem, motivated by war casualties [@cirillo2016statistical], operational risk
+[@cirillo2016expected], and pandemic fatalities [@cirillo2020tail]. Rather than
+truncate, they **transform the bounded variable to an unbounded one**, fit
+ordinary extreme-value theory (EVT) there, and transform back. For a variable $Y$
+on support $[L, H]$ define the log-transform
+
+$$
+\varphi(Y) = L - H \log\!\left(\frac{H - Y}{H - L}\right).
+$$ {#eq-dual}
+
+This map is $C^\infty$, parameter-free, satisfies $\varphi^{-1}(\infty) = H$ and
+$\varphi(L) = L$, and for $Y \ll H$ gives $\varphi(Y) \approx Y$. The transformed
+("dual") variable $Z = \varphi(Y)$ has support $[L, \infty)$, so it may legitimately
+be modelled in the Fréchet class and a GPD fitted to its exceedances via the
+Pickands--Balkema--de Haan theorem. Because $\varphi$ is one-to-one and
+parameter-free, the GPD shape $\xi$ estimated on the dual data equals the shape of
+the raw tail up to the point where the bound bends the real tail down
+[@cirillo2020tail]. One then reverts to $Y$ and computes the **shadow mean** --- a
+conditional (tail) expectation that is finite even when the raw fit suggests
+$\xi > 1$:
+
+$$
+\mathbb{E}[Y \mid Y > L^\ast]
+= (H - L)\, e^{\frac{1}{\xi}\frac{\sigma}{H}}
+  \left(\frac{\sigma}{H\xi}\right)^{\!1/\xi}
+  \Gamma\!\left(1 - \tfrac{1}{\xi},\, \tfrac{\sigma}{H\xi}\right) + L,
+$$ {#eq-shadowmean}
+
+with $\Gamma(\cdot,\cdot)$ the upper incomplete Gamma function. The paper also
+gives closed forms for the quantile function, Value-at-Risk, and Expected
+Shortfall by the same route.
+
+## The comparison to hard truncation, in the authors' own terms {#sec-A-vs-trunc}
+
+@taleb2016shadow explicitly contrasts the dual transform with three alternatives:
+(i) hard truncation with renormalisation (Method B below); (ii) an absorbing
+barrier that piles the excess mass as a Dirac atom at $H$ (Method C below); and
+(iii) the dual transform. Their central objection to (i) and (ii) is
+*smoothness*: hard truncation creates a "cliff" --- an abrupt end of density at
+$H$ --- and risk measures on non-smooth densities are unstable. Their Figure 2
+shows that the truncated-Pareto mean and the smooth-transform mean **diverge most
+strongly for $\alpha < 1$**, with the smooth mean lower. The dual transform's
+real tail bends smoothly toward $H$ rather than continuing as a straight power law
+that is then guillotined.
+
+## The storm-specific-$H$ problem {#sec-A-covariates}
+
+For a *marginal* fit (no covariates) with a single global $H$ --- the pandemic
+case, where $H$ is world population --- the transform is a single fixed function
+and its properties (shape invariance, clean back-transform) hold globally. In the
+storm application $H_i = c_i - u$ is **storm-specific**, so $\varphi_i$ is a
+different nonlinear map for each storm. Two consequences follow.
+
+1. **The dual variables are not identically distributed** unless one first
+   rescales to a common bound. The clean fix is to transform the
+   *fraction-of-cap* $g_i = w_i/(c_i - u) \in (0,1]$ with a common $H = 1$, pool
+   the duals, fit one GPD, and recover per-storm shadow means by rescaling by
+   $(c_i - u)$.
+2. **Covariates cannot enter cleanly.** Because $H_i$ is built from $P_i$ and
+   $E_i$ --- quantities correlated with any plausible intensity covariate ---
+   putting a covariate on the dual scale entangles the coefficient with the
+   transform geometry and risks confounding with exposure. Method A is therefore
+   run **without covariates**, as a marginal reference, not as a covariate model.
+
+::: {.callout-caution}
+## When A earns its complexity
+
+The dual transform is a *soft-regime* instrument (@sec-regime): it is designed for
+the case where the cap $H$ is orders of magnitude above the data and the mean is
+dominated by the vast unobserved gap, so a defensible *shape* through that gap is
+essential. Its downward bend near $H$ is an imposed modelling choice, not a
+data-estimated feature; it is "more principled" than a straight extrapolation only
+to the extent that the true process actually bends. When the gap is short
+(@sec-geometry), A and a straight truncation nearly coincide and the transform
+buys little.
+:::
+
+# Method B --- renormalised truncated likelihood {#sec-B}
+
+## Construction {#sec-B-construction}
+
+Method B is the classical **upper-truncated maximum-likelihood** estimator. For a
+family with density $f(\cdot;\theta)$ and CDF $F(\cdot;\theta)$ on $[0,\infty)$,
+restrict the support to $(0,\, c_i - u]$ and renormalise so the density integrates
+to one over that interval. The per-storm log-likelihood contribution is
+
+$$
+\ell_i(\theta)
+= \log f(w_i;\theta_i) - \log F(c_i - u;\, \theta_i),
+$$ {#eq-B-loglik}
+
+with $\theta_i$ carrying covariates through, e.g., $\sigma_i = \exp(x_i^\top\beta)$.
+(The $-\log[F(c_i-u) - F(0)]$ of the general doubly-truncated form collapses to
+$-\log F(c_i-u)$ because $F(0)=0$ on the excess scale.) This is precisely the
+estimator of @aban2006parameter, who derived the MLE for the truncated-Pareto tail
+index with right-truncation point $T$ and showed the @hill1975simple estimator is
+its $T \to \infty$ limit. With known bounds the MLE has the usual regularity
+properties. Method B here generalises it to a family sweep and a covariate layer.
+
+The truncated **mean** used for scoring is
+
+$$
+\mathbb{E}[w \mid 0 < w \le c_i - u]
+= \frac{\displaystyle\int_0^{c_i - u} w\, f(w;\theta_i)\, dw}{F(c_i - u;\theta_i)},
+$$ {#eq-B-mean}
+
+closed-form for the GPD via the upper incomplete Gamma function and for the
+log-logistic via the incomplete Beta function; add back $u$ and multiply by $E_i$
+to recover expected deaths.
+
+## Cost and identifiability {#sec-B-cost}
+
+With covariates the normaliser $F(c_i - u;\theta_i)$ depends on $\beta$ both
+through the argument and through $\sigma_i$, so it contributes a **distinct
+closed-form term per storm to every gradient evaluation**. This does not require
+numerical differentiation --- the score is analytic --- but it does not collapse to
+a shared-parameter expression the way the no-covariate case does. The practical
+costs are therefore (i) a per-storm sum inside each gradient step, mitigated by
+hand-coding the analytic score and warm-starting from the untruncated fit, and
+(ii) a genuinely more serious concern flagged by @beirlant2016tail: under
+**hard** truncation the tail-index estimate can become weakly identified, because
+one is estimating a power-law exponent from data squeezed against a nearby ceiling
+and the likelihood can be flat in $\xi$. @beirlant2016tail and
+@beirlant2017fitting propose a truncated-Pareto QQ-plot and a formal test for
+truncation precisely to diagnose this.
+
+::: {.callout-warning}
+## Back-out criterion for B is not only wall-clock
+
+Because B's real risk is a flat/unstable $\xi$ rather than merely slow
+optimisation, the abort signal should include near-flat identifiability (a very
+large standard error on $\xi$, or an optimiser that wanders) as well as an
+iteration/time budget. When B is unstable, C is the graceful fallback.
+:::
+
+# Method C --- censoring at the physical cap {#sec-C}
+
+## Construction {#sec-C-construction}
+
+Method C treats the latent lethality as an *unbounded* heavy-tailed process whose
+*observed* outcome is capped: $\tilde r_i = \min(r_i,\, c_i)$. The interior
+density is left exactly as the untruncated family (no renormalisation), and the
+mass the family assigns above the cap is collected into an atom at $c_i$:
+
+$$
+\ell_i(\theta) =
+\begin{cases}
+\log f(w_i;\theta_i), & w_i < c_i - u \quad(\text{interior}),\\[4pt]
+\log\!\big[\,1 - F(c_i - u;\theta_i)\,\big], & w_i = c_i - u \quad(\text{at cap}).
+\end{cases}
+$$ {#eq-C-loglik}
+
+There is **no normaliser on the interior** (the excess-scale density already
+integrates correctly from $0$; there is no $1 - F(0)$ term since $F(0)=0$). The
+interior likelihood is therefore *identical to the untruncated fit*. This is the
+"absorbing barrier / Dirac atom at $H$" option of @taleb2016shadow and the
+actuarial upper-truncated treatment of @clark2013note.
+
+The relevant **mean** is the censored expectation, finite for any tail heaviness
+because the integrand is capped:
+
+$$
+\mathbb{E}\big[\min(w,\, c_i - u)\big]
+= \int_0^{c_i - u} w\, f(w;\theta_i)\, dw
+  + (c_i - u)\big[\,1 - F(c_i - u;\theta_i)\,\big].
+$$ {#eq-C-mean}
+
+## Why C is the cheap route to a finite mean {#sec-C-cheap}
+
+Two facts combine. First, the interior likelihood equals the untruncated
+likelihood, so C reuses existing fast machinery for the fit --- there is no
+per-storm normaliser in the gradient. Second, in the present data **no storm sits
+at its cap** (@sec-geometry): with the atom rule set to exact equality
+$D_i = P_i$ and $\max_i D_i/P_i \approx 0.2$, the atom set is empty. The atom term
+of @eq-C-loglik therefore contributes nothing in-sample, and C's *fit* is exactly
+the untruncated fit. C differs from the (broken) untruncated method **only at
+prediction/scoring time**, where @eq-C-mean caps the predictive integral at $c_i$
+and so returns a finite mean where the untruncated integral diverges.
+
+::: {.callout-tip}
+## The practical upshot
+
+For the heavy families (GPD, log-logistic) C delivers a finite mean at the cost of
+an ordinary fit plus a one-time censored-mean integral. For the light,
+already-finite-mean families the censored mean $\approx$ the ordinary mean (the
+mass above $c_i$ is negligible), so C offers nothing over the naive fit and need
+not be built for them. C is thus the natural workhorse for the two families that
+have the infinite-mean pathology, and only those.
+:::
+
+## What C assumes {#sec-C-assumes}
+
+C does not escape the unobserved-gap problem; it *relocates* it. The censored mean
+in @eq-C-mean is trustworthy to the extent that either the data reach the cap
+neighbourhood or the tail is light enough that the region $[\,\max_i w_i,\, c_i - u\,]$
+contributes little. When the fitted tail is heavy, a large share of @eq-C-mean
+comes from the atom term $(c_i - u)[1 - F(c_i - u)]$, whose mass is an
+extrapolation no observation constrains. The straight power-law extrapolation of C
+and the bent extrapolation of A (@sec-A-vs-trunc) disagree exactly over this gap,
+and the disagreement grows with $\xi$; their spread is the diagnostic of how
+assumption-driven the mean is (@sec-diagnostics).
+
+# The soft/hard-truncation taxonomy: which method for which world {#sec-regime}
+
+The result that organises the whole choice is @chakrabarty2012understanding, "Is a
+truncated heavy tail heavy or not?" They define two regimes by the position of the
+truncation point relative to the sample:
+
+- In the **soft-truncation regime** the cap is so far above the bulk of the data
+  that truncated power tails behave, in important respects, *as if no truncation
+  took place*. The characteristic heavy-tail behaviour is retained; the mean is
+  dominated by the large unobserved region above the data.
+- In the **hard-truncation regime** the cap is close enough to the data that much
+  of the "heavy-tailedness" is lost. Truncation materially reshapes the tail; the
+  finite mean is stable and supported by the data rather than by extrapolation.
+
+They also give consistent estimators of the tail exponent under truncation and a
+test to decide which regime obtains.
+
+## Locating the storm problem {#sec-regime-locate}
+
+With $\max_i D_i/P_i \approx 0.2$ and a fraction cap of $1$, the cap sits at roughly
+$5\times$ the largest observation --- under one order of magnitude. This is the
+**hard**-truncation regime. Two conclusions follow, and they invert the naive
+"defer to the sophisticated method" instinct:
+
+1. Because truncation materially reshapes the tail, it **cannot be ignored**: the
+   physical bound is doing real work, and methods that impose it (B, C) are
+   appropriate. Simultaneously, because much heavy-tailedness is lost, the finite
+   mean is **stable and data-supported**, not a knife-edge extrapolation.
+2. The dual transform (A) is a soft-regime tool. Its elaborate machinery earns its
+   keep only when the gap spans orders of magnitude and dominates the mean --- the
+   pandemic case, not the storm case. Over the short storm gap, A's bent
+   extrapolation and C's straight one nearly coincide, so A collapses toward being
+   a sensitivity check rather than the default.
+
+::: {.callout-important}
+## The pandemic case is the opposite regime
+
+@cirillo2020tail fit pandemics with $\xi \approx 1.62$ and a cap (world
+population, $\sim\!10^{9}$--$10^{10}$) some two orders of magnitude above the
+largest observation ($\sim\!10^{8}$). That is deep in the **soft** regime, where
+censoring at the cap does almost nothing (the survival at $H$ is negligible) and
+the entire mean lives in the unobserved $[\,M, H\,]$ gap. The dual transform was
+built for that situation. Reading its rhetorical conclusion --- that sample means
+are "meaningless" and compartmental point estimates unfit for risk --- as a general
+law rather than a soft-regime, worst-case-risk-management statement over-generalises
+it to a regime (hard truncation, calibrated central estimation) it was not written
+for.
+:::
+
+## The negative-shape shortcut does not work {#sec-regime-negshape}
+
+One might hope to avoid explicit truncation by letting the tail fit choose a
+bounded shape --- a GPD with $\xi < 0$ has a finite right endpoint. @beirlant2016tail
+found that standard EVT methods, **even with a negative extreme-value index, fail
+to capture truncation at high levels**: the fitted endpoint of a negative-$\xi$ GPD
+does not coincide with the known physical cap $c_i$. Imposing the *known* bound
+explicitly (B or C) is therefore necessary; shape flexibility alone will not
+recover it.
+
+# Comparison and expected behaviour {#sec-comparison}
+
+## The bias ordering {#sec-ordering}
+
+@aban2006parameter's precipitation application reports the empirical ordering that
+should be expected here too: for extreme upper quantiles the fully-truncated model
+gives the *lowest* estimate, and the untruncated-but-cap-aware version the
+*highest*, with intermediate treatments between. Translated to the present
+methods, the expected ordering of central tail estimates is
+
+$$
+\underbrace{\text{B (renormalised)}}_{\text{lowest}}
+\;\le\;
+\underbrace{\text{C (censored)}}_{\text{middle}}
+\;\le\;
+\underbrace{\text{D (untruncated, finite-mean families)}}_{\text{highest}},
+$$ {#eq-ordering}
+
+with A anywhere but, in the soft regime it is built for, typically high. B pulls
+the tail down most because renormalisation removes the above-cap mass and
+redistributes it inward, lightening the fitted tail; C retains more weight by
+keeping the untruncated interior and lodging the residual mass at the cap. If the
+downstream evidence indicates the model needs a *higher* central tail to match
+observed totals --- which the documented under-prediction and the corrective rake
+suggest --- then @eq-ordering predicts C will tend to beat B.
+
+## Summary table {#sec-table}
+
+| Aspect | A: Dual / shadow mean | B: Renormalised truncation | C: Censoring at cap |
+|---|---|---|---|
+| Provenance | @taleb2016shadow; @cirillo2020tail | @aban2006parameter; @hill1975simple limit | @taleb2016shadow (atom option); @clark2013note |
+| What it does to above-cap mass | bends tail smoothly toward $H$ via transform | redistributes it inward (renormalise) | lodges it as an atom at the cap |
+| Fit cost | trivial (marginal, no covariates) | high (per-storm normaliser in gradient) | low (interior = untruncated fit) |
+| Covariates | no (storm-specific $H$ confounds) | yes (clean, on latent scale) | yes (clean, on latent scale) |
+| Mean | @eq-shadowmean | @eq-B-mean | @eq-C-mean |
+| Finite mean at $\xi>1$? | yes | yes | yes |
+| Right regime | soft truncation | hard (canonical) | hard (natural) |
+| Key risk | bent extrapolation is imposed, not estimated | $\xi$ identifiability under hard truncation | atom mass is unconstrained extrapolation |
+| Families to build | GPD, log-logistic | GPD, log-logistic (+ Weibull check) | GPD, log-logistic |
+
+: Side-by-side of the three bounded-mean methods, plus the naive untruncated
+baseline D for the already-finite-mean families. {#tbl-compare}
+
+## The role of variant D {#sec-D}
+
+For families with an always-finite mean (gamma, lognormal, truncated-normal,
+negative binomial, Poisson, Weibull) the honest baseline is simply to fit them
+untruncated and report their ordinary mean --- "what essentially all of applied
+statistics does with a Poisson model." This is **variant D**. It exists to
+*measure* how much the boundedness correction buys: if a D-family already predicts
+the mean well out-of-sample and shrinks the rake toward one, the elaborate
+machinery was unnecessary for it. D must not be applied to GPD or log-logistic,
+for which "assume infinite support" reproduces the very infinite-mean pathology
+the exercise removes. Note that the AFT/EVT families currently report medians;
+moving them into a mean-based competition requires converting Weibull (and any
+other median-reporting family retained) to return its **mean**, not its median.
+
+# Diagnostics that make the choice empirical {#sec-diagnostics}
+
+Three diagnostics turn the method choice from an argument into a measurement.
+
+1. **A-vs-C mean spread, per family.** Because A (bent) and C (straight) disagree
+   only over the unobserved gap, and by an amount that grows with $\xi$, their
+   per-storm mean spread measures how far the reported mean is driven by tail-shape
+   assumption versus by data. Small spread $\Rightarrow$ the gap is immaterial,
+   ship C. Large spread $\Rightarrow$ the mean is assumption-driven and the spread
+   itself should be reported as structural uncertainty.
+2. **Rake-ratio shrinkage toward one, per variant.** The super-region rake is the
+   one place aggregate near-cap information enters the pipeline; it currently
+   multiplies predictions to match observed super-region totals. A variant under
+   which the rake ratio moves toward one has, by that fact, produced a mean that
+   agrees with the aggregate observed data --- the strongest available empirical
+   check on the gap extrapolation, short of data in the gap. This is the headline
+   "did we fix the under-prediction at source" number.
+3. **Truncation identifiability check for B.** Following @beirlant2016tail and
+   @beirlant2017fitting, a truncated QQ-plot / truncation test flags when B's
+   $\xi$ is weakly identified. This is the concrete abort criterion complementing
+   the wall-clock budget (@sec-B-cost).
+
+Out-of-sample scoring must be performed on the **finite mean** each bounded method
+produces, so that all candidates --- including the previously median-reporting
+AFT/EVT families --- are compared on the same functional. Because every bounded
+method has finite moments of all orders, mean-based proper scores (e.g. CRPS on the
+bounded predictive) are all admissible; the previous need to fall back on
+log-scores to dodge a missing mean no longer applies.
+
+# Conclusion {#sec-conclusion}
+
+The storm-mortality tail lives in the hard-truncation regime of
+@chakrabarty2012understanding: the physical cap sits under an order of magnitude
+above the data, materially reshaping the tail and rendering a finite mean stable
+and data-supported. In that regime the canonical truncated-MLE of
+@aban2006parameter (Method B) and censoring at the cap (Method C) are the
+appropriate estimators; C is additionally the cheap one, because with no storm at
+its cap its fit coincides with the untruncated fit and only the scoring integral
+changes. The Cirillo--Taleb dual transform (Method A) is a soft-regime instrument
+whose elaborate, physically-imposed extrapolation earns its keep only when the cap
+is remote and the mean is gap-dominated --- the pandemic case, not this one --- so
+it is retained as a marginal sensitivity probe rather than as the default. None of
+B, C, or A is "obviously horrible": B is textbook with known MLE properties, C is
+regime-appropriate and standard, and A is correct for the world it was built for.
+The remaining genuine risks are narrow and each has a named diagnostic: B's
+$\xi$-identifiability under hard truncation (truncated QQ-test), and the
+unconstrained above-cap extrapolation shared by A and C (the A-vs-C spread and the
+rake-ratio shrinkage). The recommended posture is to build A, C, and D (all cheap),
+read the rake-shrinkage and A-vs-C diagnostics, and treat B as a gated second phase
+justified only if C proves insufficient.
+
+# Literature-expansion plan for the manuscript introduction {#sec-expansion}
+
+The synthesis above rests on the roughly ten primary sources actually consulted. A
+manuscript-grade introduction should broaden along the following branches, each of
+which is a distinct search with its own key sources to locate:
+
+- **Truncated / tempered heavy-tail families as alternatives to hard truncation.**
+  Tempered stable and truncated-Lévy-flight models [@meerschaert2004tempered] and
+  stretched-exponential fat tails with characteristic scales
+  [@laherrere1998stretched] "temper" rather than guillotine the tail --- a fourth
+  conceptual option alongside A/B/C worth positioning against. Search terms:
+  *tempered Pareto Weibull*, *truncated Lévy flight*, *stretched exponential fat
+  tail*.
+- **The consistency and asymptotics of truncated-tail estimation.** Beyond
+  @aban2006parameter, pull the Hill-under-truncation asymptotic-normality results
+  and the trimming approach of Nuyts. Search terms: *asymptotic normality Hill
+  estimator truncated*, *Beirlant Reynkens fitting tails truncation*.
+- **Actuarial upper-bounded loss modelling.** The reinsurance-cap literature
+  (Albrecher, Beirlant & Teugels; @clark2013note) treats known caps as a routine
+  feature and is the closest applied analogue to a physical mortality ceiling.
+  Search terms: *upper-truncated Pareto reinsurance cap*, *bounded severity
+  distribution actuarial*.
+- **Truncation forecast from physical models.** Geophysical bounds such as the
+  Gutenberg--Richter relation for earthquake magnitude are the natural-science
+  precedent for a *known, physically-motivated* cap, exactly analogous to
+  $D_i \le P_i$. Search terms: *Gutenberg-Richter truncated magnitude*,
+  *physically bounded tail geophysics*.
+- **Regression on tail parameters.** The covariate layer (letting $\sigma_i$ or
+  the shape depend on covariates) should be grounded in the extreme-value
+  regression / GAMLSS-for-extremes literature to justify Methods B and C carrying
+  covariates on the latent scale. Search terms: *generalized Pareto regression
+  covariates*, *non-stationary extreme value model scale covariate*.
