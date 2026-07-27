@@ -376,3 +376,222 @@ def test_save_load_roundtrip(tmp_path, refit_out, focus_model_topsis, synthetic_
         assert orig.bulk.scale == back.bulk.scale
         assert orig.tail.scale == back.tail.scale
         assert orig.threshold_rate == back.threshold_rate
+
+
+# ---------------------------------------------------------------------------
+# GPD tail: draw builder, draw_scale no-op, 16-toggle predict
+# ---------------------------------------------------------------------------
+#
+# A GPD tail fits via scipy BFGS and stores the joint (beta, xi) inverse Hessian
+# in fit_result.meta['hess_inv']; fit_result.cov is None. The generic
+# _prepare_stage branch (which calls raw.cov_params()) cannot serve it, so
+# _prepare_stage dispatches to _prepare_stage_gpd. Semantics under test:
+#   * draw_coefs draws BOTH beta and xi jointly from the full hess_inv MVN.
+#   * draw_scale is a documented NO-OP for GPD.
+#   * all 16 (c, s, o, b) toggle cells build + predict finite rate/deaths.
+
+
+@pytest.fixture
+def focus_model_gpd():
+    """Same S1/S2/bulk as the TOPSIS winner, but a GPD tail (free exposure).
+
+    'free' (not 'free+weight') keeps the tail MLE well-scaled for a small
+    fixture; the weight path is exercised elsewhere and by Problem-B work.
+    """
+    cov = {"basin": True, "is_island": True, "sdi": True, "wind_speed": True}
+    import json as _j
+    return {
+        "threshold_quantile":    0.70,
+        "s1_family":             "logit",
+        "s1_exposure_mode":      "free",
+        "s2_family":             "logit",
+        "s2_exposure_mode":      "free",
+        "bulk_family":           "scaled_logit",
+        "bulk_exposure_mode":    "free",
+        "tail_family":           "gpd",
+        "tail_exposure_mode":    "free",
+        "s1_cov":                _j.dumps(cov),
+        "s2_cov":                _j.dumps(cov),
+        "bulk_cov":              _j.dumps(cov),
+        "tail_cov":              _j.dumps(cov),
+    }
+
+
+@pytest.fixture
+def refit_out_gpd(synthetic_data, fold_assignments, focus_model_gpd):
+    return refit_model_with_objects(
+        focus_model=focus_model_gpd,
+        data=synthetic_data,
+        fold_assignments=fold_assignments,
+        n_seeds=1,
+        n_folds=2,
+    )
+
+
+def test_gpd_tail_is_fit_not_sentinel(refit_out_gpd):
+    """Sanity: the GPD tail IS fit must not be the hard-failure sentinel, else
+    build_draw_models can't run. converged may be False (that's fine)."""
+    tail_entry = refit_out_gpd["is"]["tail"]
+    assert not tail_entry["failed"], (
+        f"GPD tail IS fit sentinel'd: {tail_entry['metrics']}"
+    )
+    fr = tail_entry["fit_result"]
+    assert fr.family == "gpd"
+    assert "hess_inv" in fr.meta
+    assert "shape_param" in fr.meta
+
+
+def test_gpd_build_draw_models_runs(refit_out_gpd, focus_model_gpd, synthetic_data):
+    """A GPD-tail focus model builds N draw models without raising."""
+    models = build_draw_models(
+        refit_out_gpd, focus_model_gpd, synthetic_data,
+        n_draws=25, draw_coefs=True, draw_scale=True, seed=42,
+    )
+    assert len(models) == 25
+    for m in models:
+        assert m.tail.family == "gpd"
+        # xi is carried in StageDraw.scale.
+        assert m.tail.scale is not None
+        assert np.isfinite(m.tail.scale)
+
+
+def test_gpd_coefs_off_beta_and_xi_fixed(refit_out_gpd, focus_model_gpd, synthetic_data):
+    """draw_coefs=False -> every draw shares the MLE beta AND MLE xi."""
+    models = build_draw_models(
+        refit_out_gpd, focus_model_gpd, synthetic_data,
+        n_draws=15, draw_coefs=False, draw_scale=False, seed=42,
+    )
+    beta0 = models[0].tail.params
+    xi0 = models[0].tail.scale
+    for m in models[1:]:
+        np.testing.assert_array_equal(m.tail.params, beta0)
+        assert m.tail.scale == xi0
+
+
+def test_gpd_coefs_on_beta_and_xi_vary(refit_out_gpd, focus_model_gpd, synthetic_data):
+    """draw_coefs=True -> both beta and xi vary across draws (xi is drawn
+    jointly with beta, not held fixed)."""
+    models = build_draw_models(
+        refit_out_gpd, focus_model_gpd, synthetic_data,
+        n_draws=30, draw_coefs=True, draw_scale=False, seed=42,
+    )
+    betas = np.vstack([m.tail.params for m in models])
+    xis = np.array([m.tail.scale for m in models])
+    assert np.any(betas.std(axis=0) > 0), "GPD beta draws did not vary."
+    assert xis.std() > 0, "GPD xi draws did not vary (should be drawn with beta)."
+
+
+@pytest.mark.parametrize("draw_coefs", [False, True])
+def test_gpd_draw_scale_is_noop(refit_out_gpd, focus_model_gpd, synthetic_data, draw_coefs):
+    """draw_scale is a documented no-op for GPD: toggling it (with draw_coefs
+    held) yields byte-identical draw models (beta AND xi unchanged)."""
+    common = dict(n_draws=20, draw_coefs=draw_coefs, seed=42)
+    models_s_off = build_draw_models(
+        refit_out_gpd, focus_model_gpd, synthetic_data, draw_scale=False, **common,
+    )
+    models_s_on = build_draw_models(
+        refit_out_gpd, focus_model_gpd, synthetic_data, draw_scale=True, **common,
+    )
+    for a, b in zip(models_s_off, models_s_on):
+        np.testing.assert_array_equal(a.tail.params, b.tail.params)
+        assert a.tail.scale == b.tail.scale
+
+
+def test_gpd_all_16_toggle_cells_predict(refit_out_gpd, focus_model_gpd, synthetic_data):
+    """Every (draw_coefs, draw_scale, outcome_draw, expected_bernoulli) cell —
+    all 16 — must build draws and predict finite rate/deaths for a GPD tail."""
+    import itertools
+
+    storms = synthetic_data.head(60).copy()
+    cells = list(itertools.product([False, True], repeat=4))
+    assert len(cells) == 16
+    for draw_coefs, draw_scale, outcome_draw, expected_bernoulli in cells:
+        models = build_draw_models(
+            refit_out_gpd, focus_model_gpd, synthetic_data,
+            n_draws=3, draw_coefs=draw_coefs, draw_scale=draw_scale, seed=42,
+        )
+        pred = models[0].predict(
+            storms,
+            outcome_draw=outcome_draw,
+            expected_bernoulli=expected_bernoulli,
+            seed=7,
+        )
+        label = (draw_coefs, draw_scale, outcome_draw, expected_bernoulli)
+        assert len(pred) == len(storms), label
+        assert set(pred.columns) == {
+            "p_s1", "s1_flip", "p_s2", "s2_flip", "rate", "deaths"
+        }, label
+        assert np.isfinite(pred["rate"].values).all(), f"non-finite rate in cell {label}"
+        assert np.isfinite(pred["deaths"].values).all(), f"non-finite deaths in cell {label}"
+        assert (pred["rate"].values >= 0).all(), f"negative rate in cell {label}"
+
+
+def test_gpd_prepare_stage_recovers_and_centers():
+    """Controlled recovery: generate excess rates from a known GPD log-linear
+    DGP, fit via gpd.fit, then check (a) the MLE recovers the truth and (b) the
+    _prepare_stage GPD draws center on the MLE for both beta and xi."""
+    from scipy.stats import genpareto
+
+    from idd_tc_mortality.distributions import gpd
+    from idd_tc_mortality.uncertainty.draw_models import _prepare_stage
+
+    rng = np.random.default_rng(77)
+    n = 600
+    x = rng.normal(0.0, 1.0, n)
+    X = pd.DataFrame({"const": 1.0, "wind_speed": x})
+    log_sigma = -10.0 + 0.3 * x       # sigma ~ exp(-10)
+    sigma = np.exp(log_sigma)
+    xi_true = 0.3
+    y = genpareto.rvs(c=xi_true, scale=sigma, random_state=rng)
+    weights = np.ones(n)
+
+    fit_result = gpd.fit(X, y, weights)
+    beta_mle = np.asarray(fit_result.params)
+    xi_mle = float(fit_result.meta["shape_param"])
+
+    # (a) MLE recovers the DGP truth within tolerance.
+    assert abs(beta_mle[0] - (-10.0)) < 0.5, f"intercept off: {beta_mle[0]}"
+    assert abs(beta_mle[1] - 0.3) < 0.25, f"wind coef off: {beta_mle[1]}"
+    assert abs(xi_mle - xi_true) < 0.25, f"xi off: {xi_mle}"
+
+    # (b) draws center on the MLE. Build a minimal refit_entry; raw_object is a
+    # non-None sentinel (the GPD branch reads hess_inv from fit_result.meta,
+    # not raw). exposure_mode='free' -> train_weight_mean short-circuits without
+    # touching `data`.
+    refit_entry = {
+        "raw_object": object(),
+        "spec": {"family": "gpd", "covariate_combo": {"wind_speed": True}},
+        "fit_result": fit_result,
+    }
+    focus_model = {"tail_exposure_mode": "free"}
+
+    n_draws = 5000
+    kit = _prepare_stage(
+        stage="tail",
+        refit_entry=refit_entry,
+        focus_model=focus_model,
+        data=pd.DataFrame(),
+        threshold_rate=1e-6,
+        n_draws=n_draws,
+        draw_coefs=True,
+        draw_scale=True,      # no-op for GPD
+        seed=np.random.SeedSequence(123),
+    )
+
+    # Per-parameter Monte-Carlo tolerance: |mean - mle| < 5 * SE / sqrt(n_draws),
+    # where SE is the asymptotic sd from the (psd-projected) joint covariance.
+    from idd_tc_mortality.uncertainty.draw_models import _psd_project
+    cov = _psd_project(np.asarray(fit_result.meta["hess_inv"]))
+    se = np.sqrt(np.clip(np.diag(cov), 0.0, None))
+    tol = 5.0 * se / np.sqrt(n_draws)
+
+    mean_beta = kit["params_draws"].mean(axis=0)
+    mean_xi = kit["scale_draws"].mean()
+    for j in range(len(beta_mle)):
+        assert abs(mean_beta[j] - beta_mle[j]) < tol[j], (
+            f"beta[{j}] drawn-mean {mean_beta[j]} strays from MLE {beta_mle[j]} "
+            f"(tol {tol[j]})"
+        )
+    assert abs(mean_xi - xi_mle) < tol[-1], (
+        f"xi drawn-mean {mean_xi} strays from MLE {xi_mle} (tol {tol[-1]})"
+    )

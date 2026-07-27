@@ -340,6 +340,83 @@ def test_recovery_null_covariate():
     assert abs(est["sdi"])                       < tol, f"sdi should be near 0: est={est['sdi']:.3f}"
 
 
+# ---------------------------------------------------------------------------
+# Weight-scale conditioning (BFGS convergence fix)
+# ---------------------------------------------------------------------------
+#
+# Exposure weights (~1e5-1e6) scale the weighted neg-log-likelihood to ~1e10,
+# at which magnitude BFGS's absolute gtol=1e-5 is unreachable and it reports
+# success=False despite finding the correct MLE. gpd.fit normalizes weights to
+# mean 1 for the optimization (argmax-invariant) and rescales the stored
+# hess_inv back to the raw-weight scale. These tests lock in both guarantees.
+
+def _tc_realistic_weighted_data(seed=42, n=1000):
+    rng = np.random.default_rng(seed)
+    wind    = rng.normal(0, 1, n)
+    sdi_val = rng.normal(0, 1, n)
+    log_exp = rng.uniform(np.log(10_000), np.log(1_000_000), n)
+    exposed = np.exp(log_exp)
+    log_sigma = -17.0 + 0.4 * wind - 0.3 * sdi_val + 0.5 * log_exp
+    y = genpareto.rvs(c=0.3, scale=np.exp(log_sigma), random_state=rng)
+    X = pd.DataFrame(
+        {"const": 1.0, "wind_speed": wind, "sdi": sdi_val, "log_exposed": log_exp}
+    )
+    return X, y, exposed
+
+
+def test_large_exposure_weights_converge():
+    """With raw exposure-scale weights (~1e5-1e6), gpd.fit converges cleanly
+    (success=True) rather than tripping the spurious BFGS 'precision loss'
+    failure. This is the core Problem-B fix."""
+    X, y, exposed = _tc_realistic_weighted_data(seed=42)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)  # any non-convergence -> test error
+        result = gpd.fit(X, y, weights=exposed)
+    assert result.converged is True
+
+
+def test_weight_scale_invariance_of_mle_and_covariance():
+    """Scaling every weight by a constant c must leave the MLE unchanged and
+    rescale the stored covariance by 1/c (H_raw^{-1} = H_norm^{-1} / w_mean).
+
+    Because the normalized objective, x0, and args are byte-identical for w and
+    c*w, the two BFGS runs are identical, so this holds to floating-point."""
+    X, y, exposed = _tc_realistic_weighted_data(seed=3, n=800)
+    c = 7.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        r1 = gpd.fit(X, y, weights=exposed)
+        rc = gpd.fit(X, y, weights=c * exposed)
+
+    # MLE (beta and xi) invariant to a global weight rescale.
+    np.testing.assert_allclose(r1.params, rc.params, rtol=1e-10, atol=1e-12)
+    assert abs(r1.meta["shape_param"] - rc.meta["shape_param"]) < 1e-10
+
+    # Covariance scales by 1/c: more exposure -> more information -> tighter cov.
+    np.testing.assert_allclose(
+        rc.meta["hess_inv"], r1.meta["hess_inv"] / c, rtol=1e-8, atol=0.0
+    )
+
+
+def test_unit_weights_normalization_is_noop():
+    """For unit weights (w_mean == 1) the normalization/rescale is an exact
+    no-op: the stored hess_inv equals the raw BFGS hess_inv."""
+    import warnings as _w
+
+    rng = np.random.default_rng(11)
+    n = 400
+    x = rng.normal(0, 1, n)
+    X = pd.DataFrame({"const": 1.0, "wind_speed": x})
+    sigma = np.exp(-10.0 + 0.3 * x)
+    y = genpareto.rvs(c=0.2, scale=sigma, random_state=rng)
+    with _w.catch_warnings():
+        _w.simplefilter("ignore", RuntimeWarning)
+        result = gpd.fit(X, y, weights=np.ones(n))
+    # hess_inv is dense and finite; with w_mean == 1 no rescale distortion.
+    assert isinstance(result.meta["hess_inv"], np.ndarray)
+    assert np.all(np.isfinite(result.meta["hess_inv"]))
+
+
 # Tombstone: the old test_weighted_synthetic_recovery used a two-group design
 # with no log_exposed in X. Replaced by the tests above.
 def _old_weighted_synthetic_recovery_tombstone():

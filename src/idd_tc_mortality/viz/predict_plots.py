@@ -12,6 +12,11 @@ Public surface:
   - `safe_filename`    — strip filename-hostile characters from a location_name.
   - `rate_ylabel`      — y-axis label for rate plots.
   - `plot_scenario_panel` — the main plotting function.
+
+Observed-storm fit (evaluate-stage, not postprocess draws):
+  - `load_observed_fit`      — model IS/OOS predictions on the fitted storm record.
+  - `plot_observed_fit`      — one-panel observed vs IS vs OOS.
+  - `plot_observed_fit_grid` — global + super-region grid.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -194,3 +200,134 @@ def plot_scenario_panel(
     fig.savefig(out_path, dpi=dpi, bbox_inches='tight')
     plt.close(fig)
     return out_path
+
+
+# ---------------------------------------------------------------------------
+# Observed-storm fit: what the selected model predicts on the ACTUAL storms
+# (in-sample + out-of-sample), rolled to super-region + global. Unadjusted.
+# Consumes the EVALUATE stage's `model_predictions/` (per-storm predicted_rate),
+# not the postprocess draws above.
+# ---------------------------------------------------------------------------
+
+SUPER_REGIONS: dict[int, str] = {
+    1: "Global", 4: "SE/E Asia & Oceania", 31: "C/E Europe & C Asia", 64: "High-income",
+    103: "Latin America & Caribbean", 137: "N Africa & Middle East",
+    158: "South Asia", 166: "Sub-Saharan Africa",
+}
+
+# Editable font sizes shared by the observed-fit plots. Pass ``fonts={"legend": 14, ...}``
+# to override any subset; keys: title (panel), label (axis labels), tick (axis numbers),
+# legend, suptitle (overall).
+DEFAULT_FONTS = {"title": 11, "label": 10, "tick": 9, "legend": 9, "suptitle": 14}
+
+
+def _fonts(fonts: dict | None) -> dict:
+    f = dict(DEFAULT_FONTS)
+    if fonts:
+        f.update(fonts)
+    return f
+
+
+def _apply_fonts(ax, f: dict) -> None:
+    """Apply title/label/tick/legend sizes to an axis after it's been drawn."""
+    ax.title.set_fontsize(f["title"])
+    ax.xaxis.label.set_fontsize(f["label"])
+    ax.yaxis.label.set_fontsize(f["label"])
+    ax.tick_params(labelsize=f["tick"])
+    lg = ax.get_legend()
+    if lg is not None:
+        for t in lg.get_texts():
+            t.set_fontsize(f["legend"])
+
+
+def load_observed_fit(mid: str, model_pred_dir: str | Path, input_path: str | Path,
+                      n_seeds: int = 5) -> pd.DataFrame:
+    """Observed vs model-predicted (IS + OOS) deaths on the fitted storm record,
+    rolled to super-region and global, per year.
+
+    Predicted deaths = ``predicted_rate * exposed`` from the evaluate stage's
+    ``model_predictions`` files (row-aligned with ``input_path``). OOS is summed
+    per seed at the aggregate level, then reduced to mean / min / max across the
+    ``n_seeds`` CV splits. All raw model output — no super-region rake.
+
+    Returns columns ``[location_id, year, observed, is_pred, oos_mean, oos_lo, oos_hi]``
+    for the 7 super-regions and global (location_id 1).
+    """
+    md = Path(model_pred_dir)
+    obs = pd.read_parquet(input_path).reset_index(drop=True)
+    obs["sr"] = obs["path_to_top_parent"].apply(lambda p: int(str(p).split(",")[1]))
+
+    def _pred_deaths(fname: str):
+        pr = pd.read_parquet(md / fname, columns=["predicted_rate", "exposed"]).reset_index(drop=True)
+        return (pr["predicted_rate"].to_numpy() * pr["exposed"].to_numpy())
+
+    obs["is_pred"] = _pred_deaths(f"{mid}_insample_predictions.parquet")
+    seed_cols = []
+    for s in range(n_seeds):
+        fp = md / f"{mid}_oos_seed{s}_predictions.parquet"
+        if fp.exists():
+            col = f"_oos{s}"
+            obs[col] = _pred_deaths(fp.name)
+            seed_cols.append(col)
+
+    agg = {"observed": ("deaths", "sum"), "is_pred": ("is_pred", "sum"),
+           **{c: (c, "sum") for c in seed_cols}}
+    sr = obs.groupby(["sr", "year"], as_index=False).agg(**agg).rename(columns={"sr": "location_id"})
+    glob = obs.groupby("year", as_index=False).agg(**agg)
+    glob["location_id"] = 1
+    out = pd.concat([sr, glob], ignore_index=True)
+
+    seedvals = out[seed_cols].to_numpy() if seed_cols else np.zeros((len(out), 1))
+    out["oos_mean"] = seedvals.mean(axis=1)
+    out["oos_lo"] = seedvals.min(axis=1)
+    out["oos_hi"] = seedvals.max(axis=1)
+    return out[["location_id", "year", "observed", "is_pred", "oos_mean", "oos_lo", "oos_hi"]]
+
+
+def plot_observed_fit(fit: pd.DataFrame, location_id: int, ax=None,
+                      fonts: dict | None = None, show_band: bool = True, logy: bool = False):
+    """Observed vs in-sample vs out-of-sample predicted deaths over the fitted years."""
+    ax = ax or plt.gca()
+    f = _fonts(fonts)
+    g = fit[fit["location_id"] == location_id].sort_values("year")
+    if g.empty:
+        return ax
+    ax.plot(g["year"], g["observed"], color="k", marker="o", ms=3, lw=1.4, label="observed")
+    ax.plot(g["year"], g["is_pred"], color="#1f77b4", lw=1.6, label="in-sample pred")
+    ax.plot(g["year"], g["oos_mean"], color="#d62728", lw=1.6, label="out-of-sample pred")
+    if show_band:
+        ax.fill_between(g["year"], g["oos_lo"], g["oos_hi"], color="#d62728", alpha=0.15,
+                        label="OOS seed range")
+    if logy:
+        ax.set_yscale("log")
+    ax.set_title(SUPER_REGIONS.get(location_id, location_id))
+    ax.set_xlabel("year"); ax.set_ylabel("deaths/yr"); ax.grid(alpha=0.25)
+    ax.legend()
+    _apply_fonts(ax, f)
+    return ax
+
+
+def plot_observed_fit_grid(fit: pd.DataFrame, locations=None, ncols: int = 4,
+                           figsize=None, fonts: dict | None = None,
+                           show_band: bool = True, logy: bool = False):
+    """One panel per location: observed vs IS vs OOS predicted deaths, shared legend."""
+    locations = locations or list(SUPER_REGIONS)
+    f = _fonts(fonts)
+    nr = int(np.ceil(len(locations) / ncols))
+    fig, axes = plt.subplots(nr, ncols, figsize=figsize or (5 * ncols, 4 * nr), squeeze=False)
+    axf = axes.ravel()
+    shared = None
+    for ax, loc in zip(axf, locations):
+        plot_observed_fit(fit, loc, ax=ax, fonts=f, show_band=show_band, logy=logy)
+        if shared is None:
+            shared = ax.get_legend_handles_labels()
+        lg = ax.get_legend()
+        if lg is not None:
+            lg.remove()
+    for ax in axf[len(locations):]:
+        ax.set_visible(False)
+    if shared and shared[0]:
+        fig.legend(shared[0], shared[1], loc="lower center", ncol=4, fontsize=f["legend"])
+    fig.suptitle("Observed vs model prediction on fitted storms (unadjusted)", fontsize=f["suptitle"])
+    fig.tight_layout(rect=[0, 0.04, 1, 0.97])
+    return fig

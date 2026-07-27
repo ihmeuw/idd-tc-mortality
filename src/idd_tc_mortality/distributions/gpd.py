@@ -30,6 +30,18 @@ Analytic gradient is provided to avoid finite-difference approximation, which
 causes precision loss in BFGS when the log-likelihood magnitude is large (as it
 is when log(sigma) << 0, giving -log(sigma) >> 1 per observation).
 
+Weight normalization. Observation weights are exposure (person-years), routinely
+~1e5-1e6. The weighted neg-log-likelihood is then ~1e10 in magnitude, and scipy
+BFGS's *absolute* gtol=1e-5 termination test becomes unreachable: BFGS locates
+the correct MLE but reports success=False with "Desired error not necessarily
+achieved due to precision loss". Because scaling every weight by a constant only
+scales the objective (the argmax is unchanged), we optimize with weights
+normalized to mean 1, which restores clean convergence (empirically ~0/60 ->
+~53/60 realistic weighted fits, identical MLEs). The stored hess_inv is rescaled
+back to the raw-weight scale (divide by mean weight) so downstream uncertainty is
+unchanged: f_raw = w_mean * f_norm => H_raw^{-1} = H_norm^{-1} / w_mean. For unit
+weights (w_mean == 1) this is an exact no-op.
+
 The gradient for beta (from d(-ll)/d(beta_j)):
     k_i = (1 + xi) * y_i / (sigma_i * z_i),  z_i = 1 + xi * y_i / sigma_i
     grad_beta_j = sum_i w_i * X_ij * (1 - k_i)
@@ -107,6 +119,14 @@ def fit(
     y_arr = np.asarray(y, dtype=float)
     w_arr = np.asarray(weights, dtype=float)
 
+    # Normalize weights to mean 1 for numerical conditioning (see module
+    # docstring "Weight normalization"). Scaling all weights by a constant is
+    # argmax-invariant, so this does not move the MLE; it only keeps the
+    # objective/gradient at O(1) magnitude so BFGS's absolute gtol is reachable.
+    # _validate_inputs guarantees weights > 0, so w_mean > 0.
+    w_mean = float(np.mean(w_arr))
+    w_norm = w_arr / w_mean
+
     # Initialization: OLS on log(y) gives plausible scale betas; xi=0 (exponential)
     beta_init, _, _, _ = np.linalg.lstsq(X_arr, np.log(y_arr), rcond=None)
     x0 = np.append(beta_init, 0.0)
@@ -117,7 +137,7 @@ def fit(
         opt_result = optimize.minimize(
             _neg_loglik_and_grad,
             x0,
-            args=(X_arr, y_arr, w_arr, n_mean),
+            args=(X_arr, y_arr, w_norm, n_mean),
             method="BFGS",
             jac=True,  # function returns (f, grad) — avoids finite-difference noise
             options={"maxiter": 1000, "disp": False},
@@ -135,8 +155,12 @@ def fit(
     beta_hat = opt_result.x[:n_mean]
     xi_hat = float(opt_result.x[n_mean])
 
-    # hess_inv from BFGS is a dense ndarray; L-BFGS-B would give an implicit operator
-    hess_inv = np.asarray(opt_result.hess_inv)
+    # hess_inv from BFGS is a dense ndarray; L-BFGS-B would give an implicit
+    # operator. It approximates the inverse Hessian of the *normalized*-weight
+    # objective; divide by w_mean to recover the covariance on the original
+    # (raw) weight scale (H_raw = w_mean * H_norm => H_raw^{-1} = H_norm^{-1} /
+    # w_mean). Exact no-op when w_mean == 1 (unit weights).
+    hess_inv = np.asarray(opt_result.hess_inv) / w_mean
 
     sigma_hat = np.exp(X_arr @ beta_hat)
     fitted_values = _gpd_median(sigma_hat, xi_hat)

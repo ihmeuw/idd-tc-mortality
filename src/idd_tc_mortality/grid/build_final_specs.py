@@ -1,26 +1,27 @@
 """
-CLI entry point for building the FINAL-grid IS spec list (20260608 cycle).
+CLI entry point for building the FINAL-grid IS spec list (20260714 cycle).
 
-The final grid is an explicit, hand-picked grid — the 20260517 refined-final
-96-config grid (see ``02-evaluate/refined-final-20260517/tasks.json``) PLUS two
-additions locked in on 2026-06-15:
-
-  - Tail family/exposure: add ``(gpd, weight)``  (was {log_logistic/free+weight,
-    log_logistic/weight, weibull/free}).
-  - Tail covariate option: add ``sdi`` — tail cov now ∈ {(none), sdi}
-    (was (none) only).
+The final grid is an explicit, hand-picked grid — the 2026-07-20 decision out
+of the refined screening of the 20260714_v{1985,1990,1995} vintages (see
+DECISIONS.md), identical for all three vintages. Relative to the 20260608
+final (256 configs): thresholds 1 → 3 (0.80 from the refined four is dropped),
+bulk covs 4 → 6 sets (is_island enters bulk for the first time), tail covs
+2 → 8 sets (wind_speed, basin, is_island enter tail for the first time). The
+s1/s2 option pair, bulk exposure modes, and the per-family tail (family,
+exposure) lock are unchanged from 20260608.
 
 Combinations (full cartesian of the per-stage option sets below):
+    threshold : {0.70, 0.75, 0.85}                               =  3
     s1   : 2 cov sets                                            =  2
     s2   : 2 cov sets                                            =  2
-    bulk : 2 exposure modes × 4 cov sets                         =  8
-    tail : 4 (family, exposure) pairs × 2 cov sets               =  8
-    total DH configs = 2 × 2 × 8 × 8                              = 256
-threshold pinned at 0.70.
+    bulk : 2 exposure modes × 6 cov sets                         = 12
+    tail : 4 (family, exposure) pairs × 8 cov sets               = 32
+    total DH configs = 3 × 2 × 2 × 12 × 32                        = 4,608
 
-Every combination is nesting-valid (tail_cov ⊆ bulk_cov ⊆ s2_cov; s1 free):
-each bulk cov set contains ``sdi`` so the new tail ``sdi`` option always nests,
-and all four bulk sets are subsets of both s2 sets. So all 256 survive.
+Unlike the 20260608 grid, the cartesian is NOT nesting-valid — many cells have
+tail_cov ⊄ bulk_cov (e.g. tail all4 over bulk sdi-only). That is deliberate:
+the final round is fully decoupled per stage, per the standing 2026-05-18 call
+("the point of running all combinations of viable covariate configs").
 
 This file is the auditable record for the final grid — to change it, edit the
 constants below in a single commit. The companion ``build_final_cells.py``
@@ -28,8 +29,8 @@ imports these constants so the spec list and the cell enumeration share one
 source of truth.
 
 Usage:
-    run-build-final-specs \\
-        --output-path /mnt/team/idd/pub/idd_tc_mortality/01-refined/<date>/final_is_specs.json
+    python -m idd_tc_mortality.grid.build_final_specs \\
+        --output-path /mnt/team/idd/pub/idd_tc_mortality/01-refined/<vintage>/final_is_specs.json
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def _cov(*on: str) -> dict[str, bool]:
     return {axis: (axis in on) for axis in COV_AXES}
 
 
-THRESHOLDS: list[float] = [0.70]
+THRESHOLDS: list[float] = [0.70, 0.75, 0.85]
 
 # S1 / S2 — logit/free, the two covariate sets from the 20260517 final.
 S1_FAMILY_MODE: tuple[str, str] = ("logit", "free")
@@ -73,17 +74,21 @@ S2_COVS: list[dict[str, bool]] = [
     _cov("wind_speed", "sdi", "basin", "is_island"),
 ]
 
-# Bulk — scaled_logit, both exposure modes, the four sdi-anchored cov sets.
+# Bulk — scaled_logit, both exposure modes, six sdi-anchored cov sets
+# (is_island entered bulk with the 20260714 grid).
 BULK_FAMILY: str = "scaled_logit"
 BULK_EXPOSURES: list[str] = ["free", "free+weight"]
 BULK_COVS: list[dict[str, bool]] = [
     _cov("sdi"),
     _cov("sdi", "basin"),
     _cov("wind_speed", "sdi"),
-    _cov("wind_speed", "sdi", "basin"),
+    _cov("wind_speed", "sdi", "basin"),                  # all-but-is_island
+    _cov("wind_speed", "sdi", "is_island"),              # 20260714: all-but-basin
+    _cov("wind_speed", "sdi", "basin", "is_island"),     # 20260714: all4
 ]
 
-# Tail — the three 20260517 pairs PLUS (gpd, weight); cov ∈ {(none), sdi}.
+# Tail — the four locked (family, exposure) pairs; the cov axis opened wide
+# with the 20260714 grid (was {(none), sdi}).
 TAIL_FAMILY_EXPOSURES: list[tuple[str, str]] = [
     ("log_logistic", "free+weight"),
     ("log_logistic", "weight"),
@@ -91,8 +96,14 @@ TAIL_FAMILY_EXPOSURES: list[tuple[str, str]] = [
     ("gpd", "weight"),          # 2026-06-15 addition
 ]
 TAIL_COVS: list[dict[str, bool]] = [
-    _cov(),                     # intercept-only (the 20260517 tail)
-    _cov("sdi"),                # 2026-06-15 addition
+    _cov(),                                              # intercept-only
+    _cov("wind_speed"),
+    _cov("sdi"),
+    _cov("sdi", "is_island"),
+    _cov("sdi", "basin"),
+    _cov("wind_speed", "sdi", "basin"),                  # all-but-is_island
+    _cov("wind_speed", "sdi", "is_island"),              # all-but-basin
+    _cov("wind_speed", "sdi", "basin", "is_island"),     # all4
 ]
 
 
@@ -105,8 +116,9 @@ def build_specs(thresholds: list[float] | None = None) -> list[dict]:
 
     Same shape as ``enumerate_component_specs`` / ``build_refined_specs_post2000``
     output: one dict per distinct (component, family, exposure_mode, threshold,
-    covariate_combo). These are the components that the 256 DH configs assemble
-    from — 2 s1 + 2 s2 + 8 bulk + 8 tail = 20 distinct IS specs.
+    covariate_combo). These are the components that the 4,608 DH configs
+    assemble from — 2 s1 + 3 thresholds × (2 s2 + 12 bulk + 32 tail) = 140
+    distinct IS specs.
     """
     thresholds = thresholds if thresholds is not None else THRESHOLDS
     specs: list[dict] = []
@@ -176,7 +188,8 @@ def build_specs(thresholds: list[float] | None = None) -> list[dict]:
     type=float,
     default=tuple(THRESHOLDS),
     show_default=True,
-    help="Threshold quantile levels. Defaults to the final-grid decision (0.70).",
+    help="Threshold quantile levels. Defaults to the final-grid decision "
+         "(0.70, 0.75, 0.85).",
 )
 def main(output_path: str, thresholds: tuple[float, ...]) -> None:
     """Build the final-grid IS spec list and write it to JSON."""

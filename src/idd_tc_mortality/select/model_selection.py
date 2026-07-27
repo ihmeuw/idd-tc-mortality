@@ -305,6 +305,33 @@ def pareto_frontier(
 # Step 3: Kendall tau metric agreement
 # ---------------------------------------------------------------------------
 
+def prune_redundant_metrics(tau_df, metrics_present, threshold=0.7, verbose=True):
+    # pandas 3.0 CoW makes .values read-only; fill the diagonal on a writable copy
+    arr = tau_df.abs().to_numpy(copy=True)
+    np.fill_diagonal(arr, 0)
+    tau = pd.DataFrame(arr, index=tau_df.index, columns=tau_df.columns)
+    kept = list(tau.columns)
+    log = []
+    while len(kept) >= 2:
+        sub = tau.loc[kept, kept]
+        max_val = sub.values.max()
+        if max_val < threshold:
+            break
+        i, j = np.unravel_index(np.argmax(sub.values), sub.shape)
+        a, b = sub.index[i], sub.columns[j]
+        others = [m for m in kept if m not in (a, b)]
+        ma = sub.loc[a, others].mean() if others else 0
+        mb = sub.loc[b, others].mean() if others else 0
+        drop = b if mb >= ma else a
+        log.append({'step': len(log)+1, 'pair_a': a, 'pair_b': b,
+                    'tau_pair': max_val, 'mean_a_others': ma,
+                    'mean_b_others': mb, 'dropped': drop})
+        if verbose:
+            print(f"step {len(log)}: |τ|={max_val:.3f}  {a} ({ma:.3f}) vs {b} ({mb:.3f})  → drop {drop}")
+        kept.remove(drop)
+    kept_dict = {m: metrics_present[m] for m in kept}
+    return kept_dict, pd.DataFrame(log)
+
 def kendall_tau_heatmap(
     df: pd.DataFrame,
     metrics: Dict[str, str],

@@ -1,19 +1,22 @@
 """
-Build the FINAL-grid evaluate task manifest as a *cell set* (20260608 cycle).
+Build the FINAL-grid evaluate task manifest as a *cell set*.
 
-The final grid is the explicit 256-config grid defined in ``build_final_specs``
-(the 20260517 refined-final grid + the 2026-06-15 tail additions). Unlike
+The final grid is the explicit grid defined in ``build_final_specs`` (the
+auditable record — 4,608 configs for the 20260714 cycle). Unlike
 ``build_refined_cells`` — which enumerates the *entire* structure-C space — this
-enumerates exactly the hand-picked per-stage option sets as a full cartesian:
+enumerates exactly the hand-picked per-stage option sets as a full cartesian,
+per threshold found in the manifest:
 
-    s1(2 cov) × s2(2 cov) × bulk(2 exp × 4 cov) × tail(4 fam/exp × 2 cov) = 256
+    s1(2 cov) × s2(2 cov × 3 q) × bulk(2 exp × 6 cov) × tail(4 fam/exp × 8 cov)
+    = 4,608
 
-Every combination is nesting-valid (tail_cov ⊆ bulk_cov ⊆ s2_cov; s1 free), so
-all 256 cells survive and ``n_skipped`` should be 0 against a manifest built
-from the matching spec list.
+The cartesian is deliberately decoupled (no tail ⊆ bulk ⊆ s2 nesting check);
+``n_skipped`` should still be 0 against a manifest built from the matching
+spec list, since every enumerated component exists in it.
 
 cells → ``build_hierarchical_cellset`` → ``rectangular_partition(fix=[s1, s2])``:
-one task per (s1, s2) = 2 × 2 = 4 tasks, each scoring 8 bulk × 8 tail = 64
+one task per (s1_spec, s2_spec) — the s2 spec encodes the threshold, so
+2 s1 × (2 s2 cov × 3 q) = 12 tasks, each scoring 12 bulk × 32 tail = 384
 explicit cells. The ``s2_n_cov`` task feature is attached so the submitter can
 ask size-tiered Slurm resources (one probe per |s2_cov| tier).
 
@@ -221,7 +224,7 @@ def build_final_cells_manifest(
          "group (the natural 4-task partition).",
 )
 def main(manifest_path: str, output_path: str, workflow_name: str, max_per_task: int | None) -> None:
-    """Build the final-grid cell manifest (explicit 256-config cartesian)."""
+    """Build the final-grid cell manifest (explicit per-stage cartesian)."""
     build_final_cells_manifest(
         manifest_path,
         output_path,

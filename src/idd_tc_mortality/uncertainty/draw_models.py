@@ -8,7 +8,10 @@ Four toggles, all orthogonal:
                                  or share the MLE point estimate?
   toggle 2 (draw_scale):         do the N draw models differ in their
                                  dispersion / scale parameters per stage,
-                                 or share the MLE?
+                                 or share the MLE? NO-OP for GPD tails — a GPD
+                                 has no dispersion parameter separate from its
+                                 coefficient-driven scale; see the GPD note
+                                 below.
   toggle 3 (outcome_draw):       at predict time, for bulk/tail, sample a
                                  realization from the predictive distribution,
                                  or return its analytical mean?
@@ -37,6 +40,24 @@ Asymptotic distributions used per family:
                               σ² ~ scale × df_resid / chi²(df_resid).
   gamma GLM (log link)        β ~ MVN(params, cov_params).
                               φ ~ scale × df_resid / chi²(df_resid).
+  log_logistic (scipy BFGS)   (β, log_k) ~ MVN(mle, hess_inv). draw_scale draws
+                              the shape k because the median (= exp(eta)) does
+                              not depend on k — k is a pure spread parameter.
+  gpd (scipy BFGS)            (β, ξ) ~ MVN(mle, hess_inv). draw_coefs draws BOTH
+                              β and ξ jointly from the (p+1)-dim inverse Hessian.
+                              draw_scale is a NO-OP (see GPD note below).
+
+GPD note — why draw_scale is a no-op.
+  A GPD tail is parameterised by log σ_i = X_i β (log-linear scale) and a shared
+  scalar shape ξ. There is NO separate scalar dispersion parameter analogous to
+  gamma's φ or scaled_logit's σ²: the scale σ_i is fully coefficient-driven, so
+  it is already covered by draw_coefs. ξ is an estimated MLE parameter with real
+  uncertainty (it sits in the joint hess_inv with β), and — unlike log_logistic's
+  k — ξ enters the point (median) prediction σ(2^ξ−1)/ξ. Because ξ moves the
+  central prediction rather than only the spread, it is drawn under draw_coefs
+  (jointly with β, respecting their estimated correlation), not under draw_scale.
+  Per the "draw only what has coefficient uncertainty" rule, ξ IS drawn — but
+  there is nothing left for draw_scale to toggle, so it is a documented no-op.
 
 Predictive realizations (toggle 3 = True):
 
@@ -48,6 +69,16 @@ Predictive realizations (toggle 3 = True):
       excess ~ Gamma(shape = w_eff / φ,
                      scale = mu × φ / w_eff)
       rate    = excess + threshold_rate
+
+  tail (gpd)
+      σ    = exp(eta),  ξ = stage.scale
+      excess ~ GPD(σ, ξ) via inverse-CDF: u ~ U(0,1),
+               excess = (σ/ξ)((1−u)^(−ξ) − 1)   [ξ ≠ 0]
+               excess = −σ ln(1−u)              [ξ = 0]
+      rate    = excess + threshold_rate
+      (The predictive distribution of a single new storm is GPD(σ_i, ξ); it does
+      not scale with per-obs weight, so train_weight_mean is unused — as for
+      log_logistic.)
 
 Reproducibility. Every randomness path (coefficient draws, scale draws,
 S1/S2 Bernoulli flips, bulk/tail outcome draws) is driven from a single
@@ -64,6 +95,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from idd_tc_mortality.distributions.gpd import _XI_EPS, _gpd_median
 from idd_tc_mortality.features import align_X, build_X
 
 
@@ -358,6 +390,11 @@ def _tail_mean(stage: StageDraw, eta: np.ndarray, threshold_rate: float) -> np.n
         # The fitted model's point prediction is the log-logistic median,
         # alpha = exp(eta). Matches distributions.log_logistic.predict.
         return np.exp(eta) + threshold_rate
+    if stage.family == "gpd":
+        # Point prediction is the GPD median sigma*(2^xi-1)/xi (ln(2) limit at
+        # xi=0). Matches distributions.gpd.predict. xi = stage.scale.
+        sigma = np.exp(eta)
+        return _gpd_median(sigma, stage.scale) + threshold_rate
     raise NotImplementedError(
         f"Tail family {stage.family!r} not supported by DrawModel. "
         "Add a branch to _tail_mean / _tail_draw when needed."
@@ -394,6 +431,22 @@ def _tail_draw(
         u = rng.uniform(low=0.0, high=1.0, size=eta.shape)
         u = np.clip(u, 1e-12, 1.0 - 1e-12)
         excess = alpha * (u / (1.0 - u)) ** (1.0 / k)
+        return excess + threshold_rate
+    if stage.family == "gpd":
+        # excess ~ GPD(sigma=exp(eta), xi=stage.scale). Inverse-CDF sampling:
+        #   xi != 0:  y = (sigma/xi) * ((1-u)^(-xi) - 1)
+        #   xi == 0:  y = -sigma * ln(1-u)   (exponential limit)
+        # The predictive distribution of a single new storm is GPD(sigma_i, xi);
+        # it does not scale with per-obs weight, so train_weight_mean is unused
+        # here even when exposure_mode='free+weight' (as for log_logistic).
+        sigma = np.exp(eta)
+        xi = stage.scale
+        u = rng.uniform(low=0.0, high=1.0, size=eta.shape)
+        u = np.clip(u, 1e-12, 1.0 - 1e-12)
+        if abs(xi) < _XI_EPS:
+            excess = -sigma * np.log(1.0 - u)
+        else:
+            excess = (sigma / xi) * ((1.0 - u) ** (-xi) - 1.0)
         return excess + threshold_rate
     raise NotImplementedError(
         f"Tail family {stage.family!r} not supported by DrawModel."
@@ -575,6 +628,26 @@ def _prepare_stage(
             seed=seed,
         )
 
+    # gpd also uses scipy BFGS, not statsmodels. Its joint (beta, xi) inverse
+    # Hessian lives in fit_result.meta['hess_inv'] (gpd.fit sets cov=None), so
+    # branch here before the statsmodels-only cov_params extraction below.
+    if family == "gpd":
+        return _prepare_stage_gpd(
+            stage=stage,
+            fit_result=fit_result,
+            exposure_mode=exposure_mode,
+            covariate_combo=covariate_combo,
+            param_names=param_names,
+            params_mle=params_mle,
+            spec=spec,
+            data=data,
+            threshold_rate=threshold_rate,
+            n_draws=n_draws,
+            draw_coefs=draw_coefs,
+            draw_scale=draw_scale,
+            seed=seed,
+        )
+
     has_dispersion = family in ("scaled_logit", "gamma")
     scale_mle: float | None
     df_resid: int | None
@@ -729,6 +802,87 @@ def _prepare_stage_log_logistic(
         "param_names":       param_names,
         "params_draws":      params_draws,
         "scale_draws":       scale_draws,
+        "threshold_rate":    threshold_rate,
+        "train_weight_mean": train_weight_mean,
+        "df_resid":          None,
+    }
+
+
+def _prepare_stage_gpd(
+    *,
+    stage: str,
+    fit_result,
+    exposure_mode: str,
+    covariate_combo: dict,
+    param_names: list[str],
+    params_mle: np.ndarray,
+    spec: dict,
+    data: pd.DataFrame,
+    threshold_rate: float,
+    n_draws: int,
+    draw_coefs: bool,
+    draw_scale: bool,
+    seed: np.random.SeedSequence,
+) -> dict:
+    """Kit builder for GPD tails.
+
+    gpd.fit uses scipy BFGS and stores the joint (p+1)x(p+1) inverse Hessian
+    over [beta, xi] in ``fit_result.meta['hess_inv']`` (``fit_result.cov`` is
+    None). ``fit_result.params`` is beta; the shape xi is in
+    ``meta['shape_param']``. xi is carried in ``StageDraw.scale`` so the predict
+    helpers (_tail_mean / _tail_draw) can read it.
+
+    Toggle semantics (see module docstring "GPD note"):
+      * ``draw_coefs`` draws BOTH beta and xi jointly from the full hess_inv MVN,
+        because xi enters the median prediction sigma*(2^xi-1)/xi and thus is a
+        central-prediction parameter, not a pure dispersion knob.
+      * ``draw_scale`` is a NO-OP — a GPD has no dispersion parameter separate
+        from its coefficient-driven scale, so there is nothing for it to toggle.
+        The argument is accepted (uniform build_draw_models signature) and
+        deliberately ignored.
+    """
+    del draw_scale  # documented no-op for GPD; see docstring.
+
+    cov_full = np.asarray(fit_result.meta["hess_inv"])
+    n_beta = len(params_mle)
+    if cov_full.shape != (n_beta + 1, n_beta + 1):
+        raise RuntimeError(
+            f"Stage {stage!r} (gpd): expected hess_inv shape "
+            f"{(n_beta + 1, n_beta + 1)}, got {cov_full.shape}."
+        )
+    # BFGS hess_inv can drift slightly asymmetric / non-PSD; symmetrize and
+    # project to the PSD cone before treating it as a covariance (same as the
+    # log_logistic branch).
+    cov_full = _psd_project(cov_full)
+    xi_mle = float(fit_result.meta["shape_param"])
+
+    train_weight_mean = _compute_train_weight_mean(
+        stage=stage, exposure_mode=exposure_mode, spec=spec, data=data,
+        threshold_rate=threshold_rate,
+    )
+
+    rng = np.random.default_rng(seed)
+
+    if draw_coefs:
+        joint = rng.multivariate_normal(
+            mean=np.concatenate([params_mle, [xi_mle]]),
+            cov=cov_full,
+            size=n_draws,
+        )
+        params_draws = joint[:, :n_beta]
+        scale_draws  = joint[:, n_beta]        # xi draws
+    else:
+        params_draws = np.tile(params_mle, (n_draws, 1))
+        scale_draws  = np.full(n_draws, xi_mle, dtype=float)
+
+    return {
+        "stage":             stage,
+        "family":            "gpd",
+        "exposure_mode":     exposure_mode,
+        "covariate_combo":   covariate_combo,
+        "param_names":       param_names,
+        "params_draws":      params_draws,
+        "scale_draws":       scale_draws,       # holds xi (shape), not a dispersion
         "threshold_rate":    threshold_rate,
         "train_weight_mean": train_weight_mean,
         "df_resid":          None,

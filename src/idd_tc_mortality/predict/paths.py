@@ -14,8 +14,8 @@ STORM_DRAW_DIR  = DIRECT_RISK_DIR / 'storm_draws'
 
 DRAWS_DIR       = Path('/mnt/team/idd/pub/idd_tc_mortality/03-draws/20260514/topsis_winner_v1')
 
-NEW_SDI_PATH    = '/mnt/share/forecasting/data/32/future/sdi/future_sdi_s130v66/sdi.nc'
-OLD_SDI_PATH    = '/mnt/share/forecasting/data/16/past/sdi/past_sdi_s130v66/sdi.nc'
+NEW_SDI_PATH    = '/mnt/share/forecasting/data/32/future/sdi/future_sdi_s130v89/sdi.nc'
+OLD_SDI_PATH    = '/mnt/share/forecasting/data/32/past/sdi/past_sdi_s130v89/sdi.nc'
 ISLAND_COV_PATH = '/mnt/team/idd/pub/idd_tc_mortality/00-data/current/is_island.parquet'
 STORM_DRAW_TABLE_PATH = '/mnt/team/rapidresponse/pub/tropical-storms/storm_draw_table.csv'
 TIME_BINS_PATH  = '/mnt/team/rapidresponse/pub/tropical-storms/tempestextremes/outputs/cmip6/bayespoisson_time_bins_max_bin_5.csv'
