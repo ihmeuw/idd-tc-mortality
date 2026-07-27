@@ -23,6 +23,9 @@ xarray = "^2026.4.0"
 netCDF4 = "*"
 cartopy = "^0.25.0"
 idd-tools = {path = "/mnt/share/homes/bcreiner/repos/idd-tools", develop = true}
+nbconvert = "^7.17.1"
+adjusttext = "^1.4.0"
+textalloc = "^1.2.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
