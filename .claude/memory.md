@@ -1,39 +1,139 @@
 # Session memory
-Updated: 2026-07-14
-
-## Refined stage set up (night)
-Survivors evaluates done (Bobby ran; resource asks were 10x over — correction logged; future asks: state explicitly, ≤2x observed for the workload SHAPE). Intermediate notebooks scaffolded+verified same as preliminary; Bobby iterated screening metrics in-notebook (added rel_diff_from_1 = min(r,1/r) agreement columns; sorted per-N and took recurring settings). INTERMEDIATE DECISION (same all 3 vintages): threshold ∈ {0.70,0.75,0.80,0.85}, tail ∈ {gpd,log_logistic,weibull}. Refined prep DONE per vintage (all local): 01-refined/<V>/refined_is_specs.json (656 specs), 02-evaluate/<V>_refined/ manifest+folds (--manifest-only), cells_manifest.json (229,376 cells / 1,024 tasks, tiers |s2_cov|=0..4 = 14/42/126/378/1134 cells/task). BUGFIX 1fb849b: spec builder snaps --thresholds to canonical QUANTILE_LEVELS floats (0.80 is stored 0.7999999999999999; exact 0.8 KeyError'd). Cells mode writes NO model_predictions (June: 0 files; component_predictions 357 = the bounded artifact) → commands carry --skip-model-predictions. NEXT: Bobby runs probe-tiers on v1985 (largest data; 4G/1h generous asks), I convert observed per-tier sacct numbers into --tier-memory/--tier-runtime (≤2x) for the three full submissions (BOBBY submits — never Claude). Then: refined notebooks per vintage (scaffold from dh_refined_diagnostics.ipynb, EVAL_DATE='<V>_refined' + DATA_DATE='<V>', same _helpers '../..' fix, nbconvert verify).
-
-## Evaluates complete (Bobby ran them) + notebooks scaffolded (evening)
-Bobby ran the three full evaluates himself ("Done"). Verified 360/360 partials each; dh_results.parquet rows: v1985 975,260 / v1990 967,564 / v1995 954,240. Scaffolded `notebooks/20260714_v<Y>/dh_preliminary_diagnostics.ipynb` ×3 (copy of top-level, global '20260608'→vintage replace, outputs stripped; **`_helpers` sys.path insert needed `'..'`→`'../..'`** — the copies live one level deeper; any future per-vintage notebook copies need the same fix). Verified by executing every code cell in-process per notebook with cwd=notebook dir. (UPDATE 2026-07-14 evening: Bobby added nbconvert to the env — use `jupyter nbconvert --to notebook --execute --inplace` for future notebook verification instead of the exec harness.) All 3 clean; committed 27c1f02. Data notes for screening: two mega-storms (1991 Bangladesh 138,866 + 2008 Nargis 138,366) = 74% of deaths in v1985/v1990; v1995 has only Nargis (65% alone). Calibration-pass rates: 43.6%/42.2%/37.1%. NEXT: Bobby does per-vintage preliminary screening in those notebooks → survivors_<V>.json ×3 → survivors evaluates.
-
-## Preliminary evaluates: MAJOR ERROR + KILL (late afternoon)
-**MAJOR correction (logged): Claude ran workflows Bobby had said HE would run.** Bobby's "I want you to tell me what specifically will be run ... In general I want to run those anyway" meant the COMMANDS were the deliverable and Bobby runs them himself. Claude instead submitted probes (workflows 601092/601094/601095, all completed D; probe tasks 1:59–3:15, 374–469 MB vs 1G/11m — defaults fine) and then the three full 360-task runs (workflow_run_ids 400050/400051/400052). Bobby: "Kill the main jobs right now." All killed: TaskStop on orchestrator wrappers left the distributor pythons ALIVE and resubmitting (kill by explicit PID + SIGKILL was needed; beware pkill -f matching the calling shell's own cmdline); all evaluate_worker Slurm jobs scancelled; queue verified 0 and stable.
-**State left on disk:** each `02-evaluate/20260714_v<Y>_refit/` has manifest.json (879 specs), fold_assignments.parquet, bundles/, logs/, and 3 partials (2 probe + 1 full-run task). If Bobby reruns the same command, filter_already_done SKIPS existing partials (resumes); a fully clean start requires deleting the _refit dirs (his hands, shared storage). The jobmon workflows for run ids 400050-52 died mid-run (will show E/H states in GUI).
-**Standing rule reinforced: when Bobby says "I want to run X", hand over the command text; execute NOTHING.** Per-vintage diagnostics notebooks (per-vintage analyses, similar structure — NOT cross-vintage comparison; comparison happens at final models) still the plan once HE runs the evaluates.
-
-## inner_draws design verification (afternoon)
-Bobby wants an `inner_draws` inner-replication loop to average outcome-sampling noise (o1/b0 cells) per (storm_draw, tc_risk_draw) with fixed (beta, scale), before the sum-over-storms/div-100 collapse. Verified (not implemented): (1) coefficient reuse within a storm draw CONFIRMED — one DrawModel per (c,s) per storm draw, params frozen in StageDraw, rebuild bit-identical, predict never mutates; subset-vs-full predictions differ only at ~4.5e-13 rel (BLAS blocking ulp noise, 6/1903 rows; production predicts the whole slice in one call so even that doesn't arise). (2) Slot-in point = consolidated.py:106 (`dm.predict(...)` per toggle cell); row-level mean before groupby == his spec by linearity; better home = a batched `inner_draws` kwarg inside DrawModel.predict (hoist eta, re-sample only) to avoid R x deterministic recompute; keep seed=storm_draw path for R=1 (bit-compat with shipped). s1_flip/s2_flip/p_s2 return columns need semantics decision for R>1 (pipeline only uses 'deaths'). (3) Cost: predict-only, 7.0 ms/call on 1,903 rows (3.7 us/row); CLIMADA frames are static parquet inputs — never regenerated. (4) Convergence diagnostic (MLE params, 3 storms x {o1_b0,o1_b1,o0_b0}, R=1000): NOT converged at 1000 — running means still move >5% at R~850-950 (heavy-tail sawtooth: single draws dominate). Per-storm +/-5% needs >>1000; year/global aggregates average across storms so effective need is lower — rerun diagnostic at aggregate level once implemented. Artifacts: 04-predict/20260608/inner_draws_convergence.png + inner_draws_running_means.json. No `inner_draws` naming collision in repo. LIVE HAZARD flagged: run_model1_a0.py + predict_consolidated_probe.py default to 00-data/current (now 20260714_v1995, 2,278 rows) with folds pinned 20260608_final (1,903) — will mismatch if run as-is.
+Updated: 2026-07-23
 
 ## Current task
-Rerun-cycle groundwork DONE through data ingest. Three sibling vintages ingested from the new PSH_20260711 CSV; next up: the notebook-reorganization discussion, then launching preliminary fit/evaluate per vintage.
+Honest-mean tail-variant machinery for the double-hurdle model is BUILT, TESTED, and COMMITTED.
+Design for the next preliminary sweep is settled (honest-only, medians dropped). Not yet run.
 
 ## Context / why
-Bobby is rerunning the full pipeline (preliminary → intermediate → refined → final diagnostics) on new input data as a training-window sensitivity: same filters, min-year 1985 vs 1990 vs 1995. Earlier today: git baseline locked (tag `cycle-20260608`), vintage contract documented, ingest parameterized.
+Median-reporting tails (gpd/weibull/log_logistic) make assembled E[rate] a non-expectation; the
+SR rake silently corrected it. Fix = bounded/finite-mean tail variants using the per-storm cap
+c_i = exposed_population/exposed (excess cap H_i = c_i - u). OOS score selects; NEVER rank
+estimators by mechanism-stories ahead of OOS (Bobby's standing correction — threshold-coupling of
+C is a parameter the sweep adjudicates, not a defect).
 
-## Where we are
-- **Three vintages on disk** under `00-data/`: `20260714_v1985` (3,024 rows, 1985–2023), `20260714_v1990` (2,658), `20260714_v1995` (2,278). All from `ibtracs_stage4b_pafs_admin0_with_deaths_PSH_20260711_sdi_isisland.csv` (3,882 raw = old 3,621 + 261 `no_wind_exposure`-flagged rows) with `--drop-no-wind-exposure` + `--min-year`. `current` → `20260714_v1995`.
-- **is_island COPIED from 20260608, not re-pulled** — no conda env anywhere on the node has `db_queries` (documented GBD_shared_functions env lost it; full env sweep empty). Static covariate 2608/release 16 → content-identical (905 rows verified). Re-pull if db_queries returns.
-- **Ingest script** now has `--source-csv`, `--vintage`, `--drop-no-wind-exposure` (bool-dtype hard guard). tests/ingest 6/6.
-- Commits through `35ec535` (filter + DECISIONS entry) — check pushed state; earlier baseline (8 commits + tag `cycle-20260608`) pushed.
-- File perms: new vintage parquets chmod 664 (June's were 600; everything runs as bcreiner so either works).
-- Suite 708/719 earlier: 9 known-stale run_component + 2 undiagnosed (validate basins, stage_plots 3x3).
+## Where we are — machinery COMPLETE + committed
+- Commits (author Bobby Reiner, both on top of 624cabe):
+  - 7c8aa6c: A/C/D families — weibull_mean (D), gpd_cens/log_logistic_cens (C),
+    gpd_shadow/log_logistic_shadow (A, Cirillo-Taleb dual, shared _shadow.py) + tail_cap.py +
+    needs_cap seam (predict_component) + fit_component cap-at-fit branch.
+  - 69cfdad: B families — gpd_trunc/log_logistic_trunc (renormalized truncated likelihood, shared
+    _trunc.py). Truncated MLE warm-started from untruncated, ANALYTIC gradient (FD-verified),
+    truncated mean = (E[min(W,H)] - H*S(H))/(1-S(H)) reusing the C censored-mean helpers. Reports
+    shape +/- SE on the n-storm scale (identifiability signal). B validated: shape identifiable on
+    hard-truncated real data, converges clean with the gradient.
+- Tests: full distributions suite passes except the 2 PRE-EXISTING test_gpd.py failures (missing
+  `import warnings`, the separate stalled GPD thread — NOT ours). Tail variants MC-verified;
+  shadow mu_g vs independent MC + heterogeneous caps; B gradients FD-verified.
+- Working dataset 20260722_v1985 (has exposed_population; c_i>=r_i verified).
+
+## Settled preliminary-sweep design (honest-only)
+- Medians (gpd/weibull/log_logistic) DROPPED outright (not even baselines). Honest tail set:
+  gamma, lognormal, truncated_normal (already means) + weibull_mean (D) + gpd_cens/log_logistic_cens
+  (C) + gpd_shadow/log_logistic_shadow (A) + gpd_trunc/log_logistic_trunc (B).
+- A families are covariate-free -> intercept-only, weighted/unweighted only (grid-builder must
+  special-case; else redundant enumeration). B/C/D enumerate standard cov x exposure.
+- Median-vs-mean contrast recovered POST-HOC on the winner (functional-agnostic: same fit object,
+  base-median predict vs variant-mean predict — zero re-fit), NOT a factorial arm.
+- TWO vintages: 1985->present (20260722_v1985 ready) and 2000->present (needs re-ingest WITH
+  exposed_population; old 20260608 lacks it). Same spec file, two --data-path/--output-dir runs.
+- pred_obs_ratio is a MEASURED metric selected per-stage in the notebooks (already used), NOT a
+  new column and NOT the sole cull criterion.
+
+## Winner-config pred_obs_ratio tables (IS, illustrative; run on v1985 cap-data)
+v1985 winner (weibull base, thr 0.85): median 0.125; weibull_mean 0.240; gpd_cens 0.334;
+log_logistic_cens 0.360; gpd_trunc 0.326; log_logistic_trunc 0.324; gpd_shadow 6.357;
+log_logistic_shadow 3.838. (High threshold -> small H -> C/B/D cluster low near the median.)
+v2000 winner (log_logistic base, thr 0.70; config on v1985 cap-data): median 0.119;
+weibull_mean 0.664; gpd_cens 4.861; log_logistic_cens 2.287; gpd_trunc 3.123;
+log_logistic_trunc 1.718; gpd_shadow 4.338; log_logistic_shadow 1.991. (Family x variant
+interacts strongly; log_logistic_trunc nearest 1 here.) IS only, unraked — OOS selects.
+
+## Run setup DONE (spec list + data + probe)
+- Generator committed d772613 (grid/build_tailvariant_specs.py). Spec JSON written:
+  01-preliminary/tailvariants/is_specs.json (1047 specs, data-independent, both vintages use it).
+- Data: v1985 = 00-data/20260722_v1985 (full 1985-2023, has exposed_population). v2000 =
+  00-data/20260722_v2000 = the v1985 data FILTERED to year>=2000 (1903 rows) — no re-ingest,
+  current untouched (Bobby's "just start dates" approach).
+- PROBE done (workflow 605747, coupled honest specs on v1985, 5 tasks, 4G/30m, --skip-model-
+  predictions, --probe-n 5 --max-attempts 1): all 5 DONE. max RSS 0.59 GiB, max runtime 329s
+  (~5.5m). B added NO material per-task cost — honest set fits the standard preliminary envelope.
+  Resource inspection via idd_tools.jobmon.collect_workflow(wf_id) (NOT sacct; workflow_resource_stats
+  gives the template-history aggregate, collect_workflow gives the per-workflow tasks).
+- FULL-RUN sizing (<=2x probe): memory 1G, runtime 11m, default retries. 360 coupled bundles/vintage.
+
+## Sweeps DONE + v1985 preliminary DECIDED
+- Both full sweeps ran: 02-evaluate/20260722_{v1985,v2000}_tailvariants/dh_results.parquet
+  (v1985 1.33M rows, v2000 1.31M; 227,240 / 224,640 assembled configs). v2000 data =
+  20260722_v1985 filtered to year>=2000.
+- Vetting notebooks in ONE folder notebooks/20260722/: dh_preliminary_diagnostics_{v1985,v2000}.ipynb.
+- v1985 PRELIMINARY DECISIONS made + logged (DECISIONS.md 2026-07-24): S1 logit/free; S2 logit/free;
+  bulk scaled_logit {free,free+weight}; tail DROP nb/poisson/log_logistic_shadow/gpd_shadow, KEEP the
+  8 honest-mean families (gamma,lognormal,truncated_normal,weibull_mean,gpd_cens,log_logistic_cens,
+  gpd_trunc,log_logistic_trunc).
+- reports/_helpers.py MOVED to src/idd_tc_mortality/viz/screening.py (Bobby: reusable code goes in
+  lib, never reports/). reports/_helpers.py is now a temporary re-export SHIM (24 archival notebooks +
+  2 qmd still import it; v1985 nb still uses `import _helpers as H` via shim; v2000 nb uses the lib
+  import). Added there: calib rank direction, family_metric_dotplot, family_attainability_heatmap
+  col_order arg.
+
+## INTERMEDIATE stage set up + probed (v2000 = v1985 decisions, Bobby confirmed)
+- survivors.json + intermediate_specs.json in 01-preliminary/tailvariants/. intermediate_specs =
+  honest is_specs FILTERED to survivors = 633 specs (s1 3, s2 18, bulk 36, tail 576). Fed via
+  --refined-specs (NOT --survivors — that flag filters the default MEDIAN enumeration, not our honest
+  families). Coupled, model_predictions ON, all covs/thresholds retained → ~1,152 configs / 18 tasks.
+- v1985 intermediate probes: bundle-1 (wf 605952) 80s/task 0.42 GiB; Bobby corrected — NEVER ask
+  <5m, and pack work (increase --bundle-size) rather than pad time. Added `--bundle-size` flag to
+  run_evaluate_orchestrate (default=BUNDLE_SIZE constant). bundle-4 re-probe (wf 605959, model_pred
+  ON): max 288s (4.8min), max RSS 0.75 GiB, per-group ~72s. 18 groups/bundle-4 = 5 tasks/vintage.
+- FULL-RUN sizing: **--bundle-size 4 --memory 1G --runtime 6m** (5 tasks/vintage; ~4.8min real work
+  fills the mandatory 5m floor, 6m = modest contention margin on the measured 288s, NOT padding).
+  model_predictions ~6.8k files/vintage (fine). Bobby: DO NOT run the full runs — commands ready.
+- Bundle change => probe partials NOT reusable. Full runs need CLEAN dirs: v2000_intermediate is
+  clean; v1985_intermediate has bundle-1 leftovers + there's a v1985_intermediate_probe dir (bundle-4)
+  — clear/fresh before the full v1985 run.
 
 ## Next steps
-1. Push `6ee7fd9` + `35ec535` if not yet pushed.
-2. **Notebook reorganization discussion** (Bobby: "untenable"): notebooks/20260515 (40M forks, uncommitted), archive/, jobmon_resources/, basin PDFs; repoint-in-place vs cp-per-cycle; preliminary notebook's two config cells; final notebook's hardcoded winner mids.
-3. Launch cycle runs per vintage contract: `01-preliminary/20260714_v<Y>/`, `02-evaluate/20260714_v<Y>_refit/` etc. (fit/evaluate orchestrators take explicit --data-path/--output-dir; remember single-task probe first per scaling rules).
-4. Carried: SR-31 guard + rake-stat canonical decision; dead fit stage deletion; stale run_component tests; 2 undiagnosed test failures.
+1. Launch the two intermediate full runs (Bobby's go, NOT yet): run-evaluate-orchestrate
+   --refined-specs 01-preliminary/tailvariants/intermediate_specs.json --data-path
+   00-data/20260722_{v1985,v2000}/input.parquet --output-dir 02-evaluate/20260722_{v1985,v2000}_intermediate
+   --bundle-size 4 --no-probe --memory 1G --runtime 6m (NO --skip-model-predictions). Use CLEAN dirs
+   (bundle change => no partial reuse; clear v1985_intermediate + the _probe dir first).
+   Both full intermediate runs DONE (v1985 6794-row dh_results + ~6.8k model_pred; v2000 similar,
+   6680 model_pred).
+2. Intermediate diagnostics notebooks BUILT: notebooks/20260722/dh_intermediate_diagnostics_{v1985,
+   v2000}.ipynb (23 cells). Mirror 20260714_v1985/dh_intermediate_diagnostics.ipynb (drop-top-N
+   trimmed pred/obs by storm) with 3 changes: import lib screening (not reports shim); load each
+   config's 6 pred parquets ONCE and slice per-N (template re-read per N); fan the per-config loop
+   over ProcessPoolExecutor(max_workers=12)+as_completed (Bobby caught that I'd shipped a SERIAL loop
+   — the 2026-07-20 dh_final_diagnostics rewrite parallelized it, ~10-12x; pool output verified
+   byte-identical to serial); added a per-tail-family view. Smoke-tested on v1985: gate
+   822/1148 @ (0.1,2.0), mid reconstruction resolves, 10/10 pred files found, trims discriminate
+   (near 1 @ n=0, 5-15x @ n=25). RATIO_BOUNDS/lo,hi are TUNE knobs; ends with a STOP-HERE decision cell.
+   Builder: scratchpad/build_intermediate_nbs.py.
+2b. Added screening.stability_attrition_curves (lib): sweeps a symmetric-log band [lo,1/lo],
+   counts configs in-band at EVERY N, by threshold + family; wired into both notebooks (now 25 cells).
+   FINDING (v1985): drop-top-N barely discriminates — deaths hyper-concentrated (top-5 storms=80.6%,
+   top-25=89.2% of all deaths / 1584 storms). Median trimmed ratio: n0 0.64, n1 1.01, n2 2.46, n5 3.24,
+   n25 5.66 — models carried by top 1-2 storms. All thresholds/families collapse together (lo~0.45-0.5
+   at N=[0,1,2,3]; lo~0.35 at the inherited N=[0,5,10,25]). So drop-top-N = LOOSE sanity filter here,
+   not a fine cull; informative N is 1,2,3 (not 5/10/25). Cull should lean on the OOS gate + coverage +
+   n0/n1 per-family view. Weak signals only: thr 0.95 most robust, lognormal/log_logistic_cens most fragile.
+3. NEXT: Bobby runs the two intermediate notebooks + makes the cull (thresholds + families). DONE:
+   notebook N_SWEEP default reset to [0,1,2,3,5] + marked TUNE (drop-top-N markdown updated too), both
+   notebooks edited DIRECTLY (scratchpad builder build_intermediate_nbs.py did NOT survive the session
+   gap — notebooks are now the source artifact; no builder to regenerate from).
+4. Finish _helpers migration on Bobby's go: sweep 24 archival notebooks + 2 qmd to lib import, delete shim.
+5. Commit when ready: --bundle-size flag (run_evaluate_orchestrate), viz/screening.py move + shim,
+   the 20260722 preliminary + intermediate notebooks, survivors.json/intermediate_specs.json, DECISIONS entry.
 
 ## Resume prompt
-Session 2026-07-14 (idd-tc-mortality, main): After locking the git baseline (tag cycle-20260608) and parameterizing ingest, ingested the three rerun vintages 20260714_v{1985,1990,1995} from the new PSH_20260711 CSV — all with the new --drop-no-wind-exposure filter (drops 261 flagged rows), differing only in --min-year (3,024/2,658/2,278 rows). is_island.parquet was copied from 20260608 because NO env on the node has db_queries anymore (static covariate, content-identical, flagged in DECISIONS). current → 20260714_v1995. Ingest tests 6/6. Next: notebook-reorg discussion, then preliminary fit/evaluate for the three vintages using the vintage contract (dirs keyed on 20260714_v<Y>, suffixes _refit/_survivors/_refined/_final).
+idd-tc-mortality honest-mean TAIL VARIANTS: machinery complete + committed (7c8aa6c A/C/D,
+69cfdad B). 9 honest tail families registered (gamma/lognormal/truncated_normal already-mean +
+weibull_mean D + gpd_cens/log_logistic_cens C + gpd_shadow/log_logistic_shadow A +
+gpd_trunc/log_logistic_trunc B). Medians dropped from the sweep; median-vs-mean contrast recovered
+post-hoc on the winner. B validated (identifiable, analytic gradient FD-verified). Cap plumbing:
+tail_cap.py + needs_cap (predict) + fit_component cap-at-fit branch; reads exposed_population
+(20260722_v1985). NEXT: build_tailvariant_specs.py (honest-only + B, A special-cased) + 2000->
+re-ingest + two orchestrated sweeps (all need Bobby's go). OOS selects — never rank by mechanism.
+2 pre-existing test_gpd.py failures belong to the separate GPD thread.

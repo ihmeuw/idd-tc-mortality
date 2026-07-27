@@ -35,3 +35,13 @@ env/
 
 # Dated .bak backups (bak-before-edit convention)
 *.bak.*
+
+# Rendered Quarto output (regenerate from the .qmd)
+/docs/**/*_files/
+/docs/**/*.html
+/docs/**/*.pdf
+
+# Stray output PDFs and scratch / superseded notebooks (kept on disk, not in history)
+/basin_comparison*.pdf
+/notebooks/dh_final_diagnostics_old.ipynb
+/notebooks/20260515/

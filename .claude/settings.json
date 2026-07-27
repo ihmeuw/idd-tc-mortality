@@ -10,7 +10,14 @@
       "Read(//tmp/**)",
       "Bash(python)",
       "Edit(/mnt/share/homes/bcreiner/repos/idd-tc-mortality/.claude/**)",
-      "Write(/mnt/share/homes/bcreiner/repos/idd-tc-mortality/.claude/**)"
+      "Write(/mnt/share/homes/bcreiner/repos/idd-tc-mortality/.claude/**)",
+      "Bash(cat >> *)",
+      "Bash(xargs -n1 basename)",
+      "Bash(echo \"check-ignore exit: $?\")",
+      "Bash(echo \"=== config settings the new extension contributes ===\")"
+    ],
+    "additionalDirectories": [
+      "/mnt/share/homes/bcreiner/.claude/projects/-mnt-share-homes-bcreiner-repos-idd-tc-mortality/corrections"
     ]
   }
 }
