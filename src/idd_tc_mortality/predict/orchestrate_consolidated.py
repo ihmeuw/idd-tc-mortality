@@ -37,6 +37,7 @@ from idd_tools.jobmon import (
 
 from idd_tc_mortality.predict.consolidated import rollup_and_summarize, rollup_basin
 from idd_tc_mortality.predict.paths import STORM_DRAW_TABLE_PATH
+from idd_tc_mortality.sensitivity import ANCHOR_YEAR, SENSITIVITY_MODES
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -87,6 +88,14 @@ def _rollup(out_dir: Path, hierarchy_path: str, storm_draw_table: str) -> Path:
 @click.option("--old-sdi-path", required=True, type=str)
 @click.option("--new-sdi-path", required=True, type=str)
 @click.option("--exposure-col", default="person_storm_hours", show_default=True)
+@click.option("--sensitivity", default="none", type=click.Choice(SENSITIVITY_MODES), show_default=True,
+              help="Driver-of-change sensitivity forwarded to the worker: freeze SDI and/or "
+                   "population from --anchor-year onward.")
+@click.option("--pop-past-path", default=None, type=str,
+              help="FHS past population nc (for pop_const/both).")
+@click.option("--pop-future-path", default=None, type=str,
+              help="FHS future population summary nc (for pop_const/both).")
+@click.option("--anchor-year", default=ANCHOR_YEAR, show_default=True, type=int)
 @click.option("--workflow-name", default="predict-consolidated", show_default=True)
 @click.option("--memory", default=_DEFAULT_MEM, show_default=True, help="Slurm memory per task.")
 @click.option("--runtime", default=_DEFAULT_RT, show_default=True, help="Slurm runtime per task.")
@@ -94,7 +103,8 @@ def _rollup(out_dir: Path, hierarchy_path: str, storm_draw_table: str) -> Path:
 @with_probe()   # adds --probe-n / --no-probe -> probe_n, no_probe
 def main(cells_file, focus_model, consolidated_path, out_dir, data_path, folds_path,
          hierarchy_path, storm_draw_table, is_island_path, old_sdi_path, new_sdi_path,
-         exposure_col, workflow_name, memory, runtime, max_attempts, probe_n, no_probe):
+         exposure_col, sensitivity, pop_past_path, pop_future_path, anchor_year,
+         workflow_name, memory, runtime, max_attempts, probe_n, no_probe):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     cells_tasks = json.load(open(cells_file))["tasks"]
@@ -109,7 +119,12 @@ def main(cells_file, focus_model, consolidated_path, out_dir, data_path, folds_p
         "storm_draw_table": storm_draw_table, "is_island_path": is_island_path,
         "old_sdi_path": old_sdi_path, "new_sdi_path": new_sdi_path,
         "exposure_col": exposure_col,
+        "sensitivity": sensitivity, "anchor_year": anchor_year,
     }
+    _pop_paths = bool(pop_past_path and pop_future_path)
+    if _pop_paths:
+        task_args_common["pop_past_path"] = pop_past_path
+        task_args_common["pop_future_path"] = pop_future_path
     manifest = TaskManifest(
         workflow_name=workflow_name,
         tasks=[
@@ -137,6 +152,9 @@ def main(cells_file, focus_model, consolidated_path, out_dir, data_path, folds_p
         d.mkdir(parents=True, exist_ok=True)
         return str(d / f"{tag}.out"), str(d / f"{tag}.err")
 
+    _pop_flags = (" --pop-past-path {pop_past_path} --pop-future-path {pop_future_path}"
+                  if _pop_paths else "")
+    _pop_args = ["pop_past_path", "pop_future_path"] if _pop_paths else []
     templates = {
         "predict_cell": TaskTemplateSpec(
             command_template=(
@@ -147,11 +165,14 @@ def main(cells_file, focus_model, consolidated_path, out_dir, data_path, folds_p
                 " --storm-draw-table {storm_draw_table} --is-island-path {is_island_path}"
                 " --old-sdi-path {old_sdi_path} --new-sdi-path {new_sdi_path}"
                 " --exposure-col {exposure_col}"
+                " --sensitivity {sensitivity} --anchor-year {anchor_year}"
+                + _pop_flags
             ),
             node_args=["task_index"],
             task_args=["cells_file", "focus_model", "consolidated_path", "out_dir",
                        "data_path", "folds_path", "storm_draw_table", "is_island_path",
-                       "old_sdi_path", "new_sdi_path", "exposure_col"],
+                       "old_sdi_path", "new_sdi_path", "exposure_col",
+                       "sensitivity", "anchor_year"] + _pop_args,
             op_args=[],
         ),
     }

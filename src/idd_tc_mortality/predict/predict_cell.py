@@ -31,6 +31,12 @@ from idd_tc_mortality.predict.consolidated import (
 )
 from idd_tc_mortality.predict.paths import STORM_DRAW_TABLE_PATH
 from idd_tc_mortality.refit_with_objects import refit_model_with_objects
+from idd_tc_mortality.sensitivity import (
+    ANCHOR_YEAR,
+    SENSITIVITY_MODES,
+    apply_sensitivity,
+    population_ratio,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -51,9 +57,18 @@ logger = logging.getLogger(__name__)
 @click.option("--old-sdi-path", required=True, type=str)
 @click.option("--new-sdi-path", required=True, type=str)
 @click.option("--exposure-col", default="person_storm_hours", show_default=True)
+@click.option("--sensitivity", default="none", type=click.Choice(SENSITIVITY_MODES), show_default=True,
+              help="Driver-of-change sensitivity: freeze SDI and/or population from --anchor-year onward.")
+@click.option("--pop-past-path", default=None, type=str,
+              help="FHS past population nc (anchor-year population). Required for pop_const/both.")
+@click.option("--pop-future-path", default=None, type=str,
+              help="FHS future population summary nc. Required for pop_const/both.")
+@click.option("--anchor-year", default=ANCHOR_YEAR, show_default=True, type=int,
+              help="Freeze the driver at this year for all years >= it.")
 def main(cells_file, task_index, focus_model, consolidated_path, out_dir,
          data_path, folds_path, storm_draw_table, is_island_path,
-         old_sdi_path, new_sdi_path, exposure_col):
+         old_sdi_path, new_sdi_path, exposure_col,
+         sensitivity, pop_past_path, pop_future_path, anchor_year):
     focus = json.loads(Path(focus_model).read_text())
     data = pd.read_parquet(data_path)
     folds = pd.read_parquet(folds_path)
@@ -67,6 +82,17 @@ def main(cells_file, task_index, focus_model, consolidated_path, out_dir,
                       tbl["source_id"].astype(str) + "_" + tbl["variant_label"].astype(str)))
     is_island = pd.read_parquet(is_island_path)
     sdi = bulk_sdi_table(old_sdi_path, new_sdi_path)
+
+    # Driver-of-change sensitivity: build the population ratio once (if needed).
+    pop_ratio = None
+    if sensitivity in ("pop_const", "both"):
+        if not (pop_past_path and pop_future_path):
+            raise click.UsageError("--sensitivity pop_const/both requires --pop-past-path and --pop-future-path.")
+        pop_ratio = population_ratio(pop_past_path, pop_future_path, anchor_year=anchor_year)
+        logger.info("sensitivity=%s: population_ratio built for %d (loc,year) keys (anchor=%d)",
+                    sensitivity, len(pop_ratio), anchor_year)
+    elif sensitivity != "none":
+        logger.info("sensitivity=%s (anchor=%d)", sensitivity, anchor_year)
 
     tasks = json.load(open(cells_file))["tasks"]
     if not 0 <= task_index < len(tasks):
@@ -95,6 +121,9 @@ def main(cells_file, task_index, focus_model, consolidated_path, out_dir,
         sl = prep_frame(sl, is_island, sdi, exposure_col=exposure_col)
         if sl.empty:
             continue
+        if sensitivity != "none":
+            sl = apply_sensitivity(sl, sensitivity, sdi_table=sdi,
+                                   pop_ratio=pop_ratio, anchor_year=anchor_year)
         loc_agg, basin_agg = predict_storm_draw(refit_out, focus, data, sl, sd)
         loc_agg.insert(0, "storm_draw", sd)
         basin_agg.insert(0, "storm_draw", sd)
