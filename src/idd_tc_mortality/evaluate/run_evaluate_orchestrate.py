@@ -436,6 +436,16 @@ def _aggregate_partials(output_path: Path) -> None:
          "probes where you want the true first-attempt outcome. Default: "
          "submit_with_manifest's default.",
 )
+@click.option(
+    "--bundle-size",
+    "bundle_size",
+    type=int,
+    default=BUNDLE_SIZE,
+    show_default=True,
+    help="Number of (s1, s2, threshold) groups packed into one Slurm task (legacy/coupled "
+         "mode). Increase to pack more work per task so the mandatory >=5m runtime ask is "
+         "used efficiently rather than padded. Default is the module BUNDLE_SIZE.",
+)
 @with_probe()
 def main(
     specs_path: str,
@@ -462,6 +472,7 @@ def main(
     max_attempts: int | None,
     no_probe: bool,
     probe_n: int,
+    bundle_size: int,
 ) -> None:
     """Orchestrate parallel evaluation: one job per bundle (legacy mode) or per task
     (task-file mode). Run probe first; confirm RSS and runtime; then resubmit with --no-probe."""
@@ -767,17 +778,17 @@ def main(
     else:
         groups = _load_is_groups(specs_path)
         n_groups = len(groups)
-        n_bundles = math.ceil(n_groups / BUNDLE_SIZE)
+        n_bundles = math.ceil(n_groups / bundle_size)
         logger.info(
             "Legacy mode: %d (s1, s2, threshold) triples → %d bundles of ≤%d.",
-            n_groups, n_bundles, BUNDLE_SIZE,
+            n_groups, n_bundles, bundle_size,
         )
 
         bundles_dir = output_path / "bundles"
         bundles_dir.mkdir(parents=True, exist_ok=True)
         bundle_paths: list[Path] = []
         for i in range(n_bundles):
-            chunk = groups[i * BUNDLE_SIZE:(i + 1) * BUNDLE_SIZE]
+            chunk = groups[i * bundle_size:(i + 1) * bundle_size]
             bp = bundles_dir / f"bundle_{i:05d}.json"
             bp.write_text(json.dumps([[s1, s2, q] for s1, s2, q in chunk]))
             bundle_paths.append(bp)

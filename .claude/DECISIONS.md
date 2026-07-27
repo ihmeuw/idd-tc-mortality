@@ -540,3 +540,39 @@ Total: 2 × 2 × 4 × 1 × 2 × 3 × 1 = 96 configs. Run with `model_predictions
 **Decision:** All three vintages (v1985/v1990/v1995) reached the SAME intermediate decision, wider than 20260608's: threshold ∈ {0.70, 0.75, 0.80, 0.85} (was {0.70, 0.85}), tail ∈ {gpd, log_logistic, weibull} with the locked per-family exposure modes (unchanged). Refined grids built per vintage: `01-refined/<V>/refined_is_specs.json` (656 IS specs = 16 s1 + 4×(16 s2 + 32 bulk + 112 tail)), manifest + folds via `--manifest-only` into `02-evaluate/<V>_refined/`, cells manifest 229,376 cells / 1,024 tasks (2× the June 512, from 2× thresholds), tiered |s2_cov|=0..4 (14→1,134 cells/task). Submission is Bobby's, probe-tiers first on v1985 (largest data), `--skip-model-predictions` (June's cells run wrote no model_predictions; component_predictions are the bounded artifact).
 **Bugfix en route:** `run-build-refined-specs-post2000` now snaps `--thresholds` to the canonical `QUANTILE_LEVELS` floats (`snap_to_quantile_levels`, 3 new tests). Root cause: threshold keys are np.linspace artifacts — 0.80 is stored as 0.7999999999999999 — so a CLI-exact 0.8 KeyError'd in `_build_manifest_and_folds` and would have mismatched dh_results joins. June never hit it because 0.70/0.85 are exact in both representations.
 **Revisit if:** the refined screening shows a threshold or tail family cleanly dominated across all three vintages — then the final grid narrows accordingly, per vintage.
+
+## 2026-07-20: Final grid for the 20260714 vintages — same settings for all three
+**Decision:** Out of refined, the final-selection grid (identical for v1985/v1990/v1995):
+- Threshold ∈ {0.70, 0.75, 0.85} (0.80 dropped from the refined four)
+- S1: logit × free, cov ∈ {all4, all-but-is_island}
+- S2: logit × free, cov ∈ {all4, all-but-is_island} (decoupled from S1)
+- Bulk: scaled_logit × {free, free+weight}, cov ∈ {sdi, sdi+wind, basin+sdi, all-but-is_island, all-but-basin, all4}
+- Tail: (family, exposure) ∈ {(gpd, weight), (log_logistic, weight), (log_logistic, free+weight), (weibull, free)} — per-family lock, not a full cross; cov ∈ {∅, wind, sdi, sdi+is_island, basin+sdi, all-but-is_island, all-but-basin, all4}
+
+Total: 3 × 2 × 2 × 2 × 6 × 4 × 8 = 4,608 configs per vintage; 13,824 across the three vintages (20260608's final was 256). vs the 20260608 final grid: thresholds 1→3; bulk_cov 4→6 sets (is_island enters bulk for the first time via all-but-basin and all4); tail_cov 2→8 sets (wind, is_island, basin enter tail for the first time); s1/s2 cov sets, bulk exposure modes, and the tail (family, exposure) lock unchanged.
+**Why:** Bobby's call off the refined screening of the three vintages (stated 2026-07-20); per-knob rationale not itemized in-session.
+**Revisit if:** The final evaluate shows a threshold or tail family cleanly dominated across vintages, or the 18×-per-vintage grid proves too costly to run with model_predictions enabled.
+
+## 2026-07-20: GPD tail models excluded from final selection (vintage reruns)
+**Decision:** Drop every gpd-tail config from the per-vintage final TOPSIS/selection for the 20260714 vintages; select only among log_logistic / weibull survivors.
+**Why:** At selection time gpd tail draws were not wired for the draw-level deliverable (can't produce coefficient draws), and gpd showed convergence concerns. Enabling gpd draws was deferred to a follow-up. All six chosen winners are log_logistic and converged. Companion principle (Bobby): a stage lacking coefficient covariance (e.g. s1) may use its point estimate as fixed in the draws — that alone is not grounds for exclusion; gpd's exclusion is the draw-build + convergence combination.
+**Revisit if:** gpd tail draws get wired end-to-end and gpd converges reliably — then gpd re-enters the selection pool.
+
+## 2026-07-20: Deliverable model set = per-vintage best-TOPSIS + one universal
+**Decision:** For each vintage ship the best-TOPSIS model; additionally pick ONE universal model that wins a combined cross-vintage TOPSIS (the same config scored across all vintages). 6 per-vintage + 1 universal.
+**Why:** Bobby wanted both the vintage-specific optimum and a single model that is defensible across training windows. Cross-vintage matching is by CONFIG_COLS tuple, never by mid (mid is vintage-dependent — it encodes the data-derived threshold_rate).
+**Revisit if:** The universal model is materially worse than the per-vintage bests in a way that matters for the deliverable.
+
+## 2026-07-21: Driver-of-change sensitivity design (freeze SDI / population / both)
+**Decision:** Quantify what drives the projected change by re-predicting with drivers frozen at anchor-year 2023: sdi_const (SDI frozen), pop_const (exposure scaled by frozen population ratio), both. Contributions: dSDI = baseline − sdi_const, dPOP = baseline − pop_const, dTOTAL = baseline − both, interaction = dTOTAL − (dSDI+dPOP). Applied on-the-fly at predict via a `--sensitivity` hook (`sensitivity/frame_adjust.apply_sensitivity`); driver `scripts/run_sensitivity.py`; read-back/decompose in `sensitivity/decompose.py` + notebook. Rake ratios recompute to baseline because the ≤2023 reference window is untouched by a post-2023 freeze. Population ratio uses complete FHS files (not the storm-gated frame), all-age/both-sex.
+**Why:** Bobby's driver-attribution request. Finding: SDI improvement dominates (~31% global reduction 2023→2100); population a smaller upward push.
+**Revisit if:** The anchor year changes, or the exposed-fraction-stable assumption behind the population ratio is challenged.
+
+## 2026-07-24: v1985 honest-tail preliminary screening decisions
+**Decision:** From the honest-mean tail-variant preliminary sweep (`02-evaluate/20260722_v1985_tailvariants`, 227,240 assembled configs, coupled), the per-stage survivors are:
+- **S1**: family `logit`, exposure `free` (drop cloglog/excluded/offset — cloglog ties logit within ~0.001 AUROC; excluded 0.72; offset 0.58).
+- **S2**: family `logit`, exposure `free` (drop cloglog/excluded; free dominates excluded by 0.10–0.15 AUROC, widening at higher thresholds).
+- **Bulk**: family `scaled_logit`; exposure `{free, free+weight}` (drop gamma/lognormal/nb/poisson/beta; drop excluded/weight). free-vs-free+weight deferred as a downstream calibration choice, not a screening one.
+- **Tail**: drop `nb`, `poisson`, `log_logistic_shadow`, `gpd_shadow` (best-rank-achievable > 20 in nearly every metric×threshold cell + structurally threshold-blind). Keep the 8 honest-mean families: gamma, lognormal, truncated_normal, weibull_mean (D), gpd_cens, log_logistic_cens (C), gpd_trunc, log_logistic_trunc (B).
+**Why:** Preliminary vetting in `notebooks/20260722/dh_preliminary_diagnostics_v1985.ipynb` (attainability heatmap + per-family metric dot plots + fwd_pred_obs_ratio over/under on symlog). Median-reporting tails were already excluded upstream (honest-only sweep); the A/shadow families screen out here as non-competitive and threshold-blind. S1/S2/bulk decisions reproduce the standard-run choices (structural, expected to transfer across vintages).
+**Revisit if:** v2000 screening disagrees (decisions are per-vintage — the tail drop-list especially should be re-confirmed against v2000's plots); or the intermediate stage (drop-top-N / per-storm / per-year) overturns a family kept on preliminary metrics alone.
