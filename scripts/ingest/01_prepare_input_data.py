@@ -95,11 +95,14 @@ RENAMES = {
 KEEP_COLS: dict[str, str] = {
     # Model inputs
     "deaths":       "int32",
-    "exposed":      "float64",
+    "exposed":      "float64",   # person_storm_hours — THE model exposure (rate = deaths / exposed)
     "wind_speed":   "float32",
     "sdi":          "float32",
     "basin":        "str",
     "is_island":    "int8",
+    # Additional exposure measure (raw exposed headcount). Carried for diagnostics
+    # only; the model exposure is `exposed` (person_storm_hours), NOT this column.
+    "exposed_population": "float64",
     # Identifiers / metadata
     "storm_id":          "str",
     "location_id":       "int32",
@@ -140,6 +143,7 @@ def _aggregate_subnationals(df_sub: pd.DataFrame) -> pd.DataFrame:
         agg_rows.append({
             "total_deaths":       int(grp["total_deaths"].sum()),
             "person_storm_hours": total_exp,
+            "exposed_population": float(grp["exposed_population"].sum()),  # headcount, summed (diagnostics only)
             "max_wind_speed":     float((grp["max_wind_speed"].values * w).sum()),
             "sdi":                float((grp["sdi"].values * w).sum()),
             "basin":              grp["basin"].iloc[0],

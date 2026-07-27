@@ -117,9 +117,12 @@ def load_unadjusted_core(blend_dir, a0_dir, a1_dir, hierarchy_df, cell,
               help="Comma-separated scenarios for the rake predicted baseline.")
 @click.option("--obs-year-start", default=DEFAULT_OBS_YEARS[0], show_default=True, type=int)
 @click.option("--obs-year-end", default=DEFAULT_OBS_YEARS[1], show_default=True, type=int)
+@click.option("--stats", default="mean,median", show_default=True,
+              help="Comma list of rake statistics to emit (subset of mean,median). "
+                   "e.g. 'mean' -> unadjusted + adjusted_mean + adjusted_mean_sr31_guard only.")
 def main(pred_root, mid, prefix, a0_dir, a1_dir, blend_dir, out_dir, summary_path,
          storm_draw_table, cell, scenarios, hierarchy_path, obs_path, past_pop_path,
-         future_pop_path, ref_scenarios, obs_year_start, obs_year_end):
+         future_pop_path, ref_scenarios, obs_year_start, obs_year_end, stats):
     a0_dir = a0_dir or pred_root / f"{mid}_a0"
     a1_dir = a1_dir or pred_root / f"{mid}_a1"
     blend_dir = blend_dir or pred_root / f"{mid}_blend"
@@ -149,8 +152,12 @@ def main(pred_root, mid, prefix, a0_dir, a1_dir, blend_dir, out_dir, summary_pat
         for p in write_draw_level(d, base_path, pop2):
             logger.info("wrote %s", p)
 
+    keep_stats = [s for s in ("mean", "median") if s in _csv(stats)]
+    if not keep_stats:
+        raise click.UsageError(f"--stats {stats!r} must be a subset of mean,median")
+
     emit("unadjusted", base)
-    for stat, guard in itertools.product(("mean", "median"), (False, True)):
+    for stat, guard in itertools.product(keep_stats, (False, True)):
         name = f"adjusted_{stat}" + ("_sr31_guard" if guard else "")
         ratios = super_region_ratios(summary, obs, hierarchy_df, cell, ref_scenarios,
                                      obs_years, sr31_guard=guard, statistic=stat)
