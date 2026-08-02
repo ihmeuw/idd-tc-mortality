@@ -49,3 +49,28 @@ def test_partition_is_twelve_tasks_covering_4608(tmp_path):
     # one (s1, s2) group per task → 384 cells each
     assert all(len(inflate_cells(t["task_args"])) == 384 for t in tasks)
     assert out.exists()
+
+
+def _write_tailvariant_manifest(tmp_path, vintage):
+    from idd_tc_mortality.grid.build_final_specs_tailvariant import build_specs as tv_specs
+    specs = tv_specs(vintage)
+    manifest = {component_id(s): s for s in specs}
+    p = tmp_path / f"manifest_{vintage}.json"
+    p.write_text(json.dumps(manifest))
+    return p
+
+
+def test_tailvariant_grids_enumerate_and_pack(tmp_path):
+    from idd_tc_mortality.grid.build_final_specs_tailvariant import n_configs
+
+    for vintage in ("v1985", "v2000"):
+        p = _write_tailvariant_manifest(tmp_path, vintage)
+        out = tmp_path / f"cells_{vintage}.json"
+        doc = build_final_cells_manifest(
+            str(p), str(out),
+            grid=f"tailvariant-{vintage}",
+            pack_target_s=600.0,
+        )
+        total = sum(len(inflate_cells(t["task_args"])) for t in doc["tasks"])
+        assert total == n_configs(vintage)     # nothing dropped or duplicated
+        assert len(doc["tasks"]) < total       # packing produced multi-cell tasks

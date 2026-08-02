@@ -38,32 +38,48 @@ from pathlib import Path
 
 import click
 
-from idd_tools.jobmon import build_hierarchical_cellset, rectangular_partition
+from idd_tools.jobmon import build_hierarchical_cellset, pack_to_target, rectangular_partition
 
 from idd_tc_mortality.evaluate.build_half_coupled_multiconfig_tasks import (
     _load_spec_lookup,
     _spec_id_for,
 )
-from idd_tc_mortality.grid.build_final_specs import (
-    BULK_COVS,
-    BULK_EXPOSURES,
-    BULK_FAMILY,
-    S1_COVS,
-    S1_FAMILY_MODE,
-    S2_COVS,
-    S2_FAMILY_MODE,
-    TAIL_COVS,
-    TAIL_FAMILY_EXPOSURES,
-)
+from idd_tc_mortality.grid import build_final_specs
+from idd_tc_mortality.grid.build_final_specs_tailvariant import GRIDS as _TAILVARIANT_GRIDS
+
+# Which grid's locked option sets drive the enumeration. The manifest must
+# have been built from the matching spec list, or cells miss their lookups.
+GRID_SOURCES = {
+    "20260714": build_final_specs,
+    "tailvariant-v1985": _TAILVARIANT_GRIDS["v1985"],
+    "tailvariant-v2000": _TAILVARIANT_GRIDS["v2000"],
+}
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-CELL_AXES = ["s1_spec_id", "s2_spec_id", "bulk_spec_id", "tail_spec_id"]
+CELL_AXES = ["s1_spec_id", "s2_spec_id", "bulk_spec_id", "tail_spec_id", "tier"]
 FIX_AXES = ["s1_spec_id", "s2_spec_id"]
 
-# Per-(s1, s2) task cell count = |bulk options| × |tail options|.
-_CELLS_PER_TASK = len(BULK_EXPOSURES) * len(BULK_COVS) * len(TAIL_FAMILY_EXPOSURES) * len(TAIL_COVS)
+
+def parse_pack_costs(spec: str) -> dict[str, float]:
+    """Parse a '--pack-costs' string: 'gamma@0.70:1.5,gpd_cens@0.95:45' →
+    {tier: seconds-per-cell}. Whitespace-tolerant; raises on malformed pairs."""
+    costs: dict[str, float] = {}
+    for pair in spec.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        tier, _, val = pair.rpartition(":")
+        if not tier:
+            raise ValueError(f"Malformed --pack-costs entry: {pair!r}")
+        costs[tier.strip()] = float(val)
+    return costs
+
+def _cells_per_task(grid_mod) -> int:
+    """Per-(s1, s2) task cell count = |bulk options| × |tail options|."""
+    return (len(grid_mod.BULK_EXPOSURES) * len(grid_mod.BULK_COVS)
+            * len(grid_mod.TAIL_FAMILY_EXPOSURES) * len(grid_mod.TAIL_COVS))
 
 
 def _cov_n_on(cov: dict[str, bool]) -> int:
@@ -71,7 +87,9 @@ def _cov_n_on(cov: dict[str, bool]) -> int:
     return sum(1 for v in cov.values() if v)
 
 
-def enumerate_final_cells(manifest_path: str) -> tuple[list[dict], dict[str, int], int]:
+def enumerate_final_cells(
+    manifest_path: str, grid_mod=build_final_specs
+) -> tuple[list[dict], dict[str, int], int]:
     """Enumerate the explicit final-grid config cells from the manifest.
 
     Returns ``(cells, s2id_to_ncov, n_skipped)``. ``cells`` is the list of cell
@@ -99,29 +117,31 @@ def enumerate_final_cells(manifest_path: str) -> tuple[list[dict], dict[str, int
     s2id_to_ncov: dict[str, int] = {}
     n_skipped = 0
 
-    for s1_cov in S1_COVS:
-        s1_id = _spec_id_for(lookup, "s1", S1_FAMILY_MODE[0], S1_FAMILY_MODE[1], None, s1_cov)
+    for s1_cov in grid_mod.S1_COVS:
+        s1_id = _spec_id_for(lookup, "s1", grid_mod.S1_FAMILY_MODE[0],
+                             grid_mod.S1_FAMILY_MODE[1], None, s1_cov)
         if s1_id is None:
             n_skipped += 1
             continue
 
-        for s2_cov in S2_COVS:
+        for s2_cov in grid_mod.S2_COVS:
             for q in thresholds:
-                s2_id = _spec_id_for(lookup, "s2", S2_FAMILY_MODE[0], S2_FAMILY_MODE[1], q, s2_cov)
+                s2_id = _spec_id_for(lookup, "s2", grid_mod.S2_FAMILY_MODE[0],
+                                     grid_mod.S2_FAMILY_MODE[1], q, s2_cov)
                 if s2_id is None:
                     n_skipped += 1
                     continue
                 s2id_to_ncov[s2_id] = _cov_n_on(s2_cov)
 
-                for b_em in BULK_EXPOSURES:
-                    for b_cov in BULK_COVS:
-                        bulk_id = _spec_id_for(lookup, "bulk", BULK_FAMILY, b_em, q, b_cov)
+                for b_em in grid_mod.BULK_EXPOSURES:
+                    for b_cov in grid_mod.BULK_COVS:
+                        bulk_id = _spec_id_for(lookup, "bulk", grid_mod.BULK_FAMILY, b_em, q, b_cov)
                         if bulk_id is None:
                             n_skipped += 1
                             continue
 
-                        for t_fam, t_em in TAIL_FAMILY_EXPOSURES:
-                            for t_cov in TAIL_COVS:
+                        for t_fam, t_em in grid_mod.TAIL_FAMILY_EXPOSURES:
+                            for t_cov in grid_mod.TAIL_COVS:
                                 tail_id = _spec_id_for(lookup, "tail", t_fam, t_em, q, t_cov)
                                 if tail_id is None:
                                     n_skipped += 1
@@ -132,6 +152,9 @@ def enumerate_final_cells(manifest_path: str) -> tuple[list[dict], dict[str, int
                                         "s2_spec_id":   s2_id,
                                         "bulk_spec_id": bulk_id,
                                         "tail_spec_id": tail_id,
+                                        # Cost tier for probing/packing; the
+                                        # worker ignores extra cell keys.
+                                        "tier": f"{t_fam}@{q:.2f}",
                                     }
                                 )
 
@@ -144,30 +167,73 @@ def build_final_cells_manifest(
     *,
     workflow_name: str = "evaluate-final-cells",
     max_per_task: int | None = None,
+    grid: str = "20260714",
+    pack_target_s: float | None = None,
+    pack_marginal_s: float = 0.49,
+    pack_load_s: float = 60.0,
+    pack_costs: dict[str, float] | None = None,
 ) -> dict:
     """Build the partitioned cell manifest and write it to ``output_path`` as JSON.
 
     Returns the manifest as a plain dict (also written to disk).
     """
+    grid_mod = GRID_SOURCES[grid]
     manifest_path = str(manifest_path)
-    cells, s2id_to_ncov, n_skipped = enumerate_final_cells(manifest_path)
+    cells, s2id_to_ncov, n_skipped = enumerate_final_cells(manifest_path, grid_mod)
     if not cells:
         raise ValueError("Enumeration produced no cells — check the manifest contents.")
 
     cellset = build_hierarchical_cellset(cells, axes=CELL_AXES)
 
-    def _features(group_key: dict) -> dict:
-        k = s2id_to_ncov.get(group_key["s2_spec_id"], -1)
-        return {"s2_n_cov": k, "expected_n_cells": _CELLS_PER_TASK}
+    if pack_target_s is not None:
+        # Pack whole (s1, s2) groups (mixing small ones) into ~pack_target_s
+        # tasks; cost model measured on the 2026-07-27 refined probes.
+        if pack_costs:
+            # Cost-aware packing: per-(family@threshold) tier marginals from
+            # the cost probes; unknown tiers fall back to pack_marginal_s.
+            tier_costs = dict(pack_costs)
+            fallback = pack_marginal_s
+            marginal = lambda cell: tier_costs.get(cell["tier"], fallback)  # noqa: E731
+            group_axes = ["tier"]
+        else:
+            marginal = pack_marginal_s
+            group_axes = FIX_AXES
+        pack = pack_to_target(
+            cellset,
+            group_by=group_axes,
+            marginal_s=marginal,
+            load_s=pack_load_s,
+            target_s=pack_target_s,
+            workflow_name=workflow_name,
+            task_template="evaluate_cells",
+        )
+        task_manifest = pack.manifest
+        if pack_costs:
+            # Per-tier CPU bill (visibility: what each family/threshold costs).
+            from collections import defaultdict
+            bill: dict[str, float] = defaultdict(float)
+            counts: dict[str, int] = defaultdict(int)
+            for cell in cells:
+                bill[cell["tier"]] += tier_costs.get(cell["tier"], fallback)
+                counts[cell["tier"]] += 1
+            logger.info("Per-tier CPU bill (cells x cost):")
+            for tier in sorted(bill, key=bill.get, reverse=True):
+                logger.info("  %-24s %7d cells x %6.1fs = %7.1f CPU-hours",
+                            tier, counts[tier], tier_costs.get(tier, fallback),
+                            bill[tier] / 3600)
+    else:
+        def _features(group_key: dict) -> dict:
+            k = s2id_to_ncov.get(group_key["s2_spec_id"], -1)
+            return {"s2_n_cov": k, "expected_n_cells": _cells_per_task(grid_mod)}
 
-    task_manifest = rectangular_partition(
-        cellset,
-        fix=FIX_AXES,
-        workflow_name=workflow_name,
-        task_template="evaluate_cells",
-        max_per_task=max_per_task,
-        features_fn=_features,
-    )
+        task_manifest = rectangular_partition(
+            cellset,
+            fix=FIX_AXES,
+            workflow_name=workflow_name,
+            task_template="evaluate_cells",
+            max_per_task=max_per_task,
+            features_fn=_features,
+        )
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -223,13 +289,66 @@ def build_final_cells_manifest(
     help="Optional cap on cells per task. None (default) = one task per (s1, s2) "
          "group (the natural 4-task partition).",
 )
-def main(manifest_path: str, output_path: str, workflow_name: str, max_per_task: int | None) -> None:
+@click.option(
+    "--grid",
+    type=click.Choice(sorted(GRID_SOURCES)),
+    default="20260714",
+    show_default=True,
+    help="Which locked grid's option sets drive the enumeration. Must match "
+         "the spec list the manifest was built from.",
+)
+@click.option(
+    "--pack-target-s",
+    type=float,
+    default=None,
+    help="Pack (s1, s2) groups into ~this-many-second tasks via idd_tools "
+         "pack_to_target. Overrides the natural partition and --max-per-task.",
+)
+@click.option(
+    "--pack-marginal-s",
+    type=float,
+    default=0.49,
+    show_default=True,
+    help="Packing cost model: seconds per cell (measured 2026-07-27 probes).",
+)
+@click.option(
+    "--pack-load-s",
+    type=float,
+    default=60.0,
+    show_default=True,
+    help="Packing cost model: seconds per distinct (s1, s2) group in a task.",
+)
+@click.option(
+    "--pack-costs",
+    type=str,
+    default=None,
+    help="Per-tier seconds-per-cell from the cost probes, e.g. "
+         "'gamma@0.70:1.5,gpd_cens@0.95:45'. With --pack-target-s, packs "
+         "tasks to equal TRUE seconds; tiers absent here fall back to "
+         "--pack-marginal-s.",
+)
+def main(
+    manifest_path: str,
+    output_path: str,
+    workflow_name: str,
+    max_per_task: int | None,
+    grid: str,
+    pack_target_s: float | None,
+    pack_marginal_s: float,
+    pack_load_s: float,
+    pack_costs: str | None,
+) -> None:
     """Build the final-grid cell manifest (explicit per-stage cartesian)."""
     build_final_cells_manifest(
         manifest_path,
         output_path,
         workflow_name=workflow_name,
         max_per_task=max_per_task,
+        grid=grid,
+        pack_target_s=pack_target_s,
+        pack_marginal_s=pack_marginal_s,
+        pack_load_s=pack_load_s,
+        pack_costs=parse_pack_costs(pack_costs) if pack_costs else None,
     )
 
 

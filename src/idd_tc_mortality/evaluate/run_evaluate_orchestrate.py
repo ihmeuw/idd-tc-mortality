@@ -366,6 +366,14 @@ def _aggregate_partials(output_path: Path) -> None:
          "set --tier-memory / --tier-runtime, and resubmit without this flag.",
 )
 @click.option(
+    "--probe-tier",
+    "probe_tier",
+    multiple=True,
+    type=int,
+    help="With --probe-tiers: probe only these |s2_cov| tiers (repeatable). "
+         "Default: all tiers present in the cells manifest.",
+)
+@click.option(
     "--tier-memory",
     "tier_memory",
     default=None,
@@ -462,6 +470,7 @@ def main(
     manifest_only: bool,
     cells_file: str | None,
     probe_tiers: bool,
+    probe_tier: tuple[int, ...],
     tier_memory: str | None,
     tier_runtime: str | None,
     scope: bool,
@@ -518,7 +527,17 @@ def main(
         if probe_tiers:
             first_per_tier: dict[int, int] = {}
             for i, t in enumerate(cells_tasks):
-                first_per_tier.setdefault(t["task_features"]["s2_n_cov"], i)
+                first_per_tier.setdefault(t["task_features"].get("s2_n_cov", -1), i)
+            if probe_tier:
+                missing = sorted(set(probe_tier) - set(first_per_tier))
+                if missing:
+                    raise click.UsageError(
+                        f"--probe-tier {missing} not present in the cells manifest "
+                        f"(tiers available: {sorted(first_per_tier)})."
+                    )
+                first_per_tier = {
+                    k: v for k, v in first_per_tier.items() if k in set(probe_tier)
+                }
             submit_indices = [first_per_tier[k] for k in sorted(first_per_tier)]
             logger.info(
                 "Probe-tiers: submitting %d tasks (one per |s2_cov| tier) {tier: task_index}=%s",
@@ -545,7 +564,7 @@ def main(
                         "cells_file": str(cells_file),
                         "task_index": i,
                     },
-                    task_features={"s2_n_cov": cells_tasks[i]["task_features"]["s2_n_cov"]},
+                    task_features={"s2_n_cov": cells_tasks[i]["task_features"].get("s2_n_cov", -1)},
                     depends_on=[],
                 )
                 for j, i in enumerate(submit_indices)

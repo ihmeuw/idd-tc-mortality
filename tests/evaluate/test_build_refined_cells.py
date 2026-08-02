@@ -156,3 +156,58 @@ def test_max_per_task_splits_fat_groups(manifest_path, tmp_path):
     assert all(len(t["task_args"]["cells"]) <= 100 for t in tasks)
     assert sum(len(t["task_args"]["cells"]) for t in tasks) == EXPECTED_TOTAL_CELLS
     assert len(tasks) > EXPECTED_N_TASKS  # fat groups were chunked
+
+
+def test_pack_target_conserves_cells_and_reduces_tasks(manifest_path, tmp_path):
+    from idd_tools.jobmon import inflate_cells
+
+    out = tmp_path / "cells_packed.json"
+    build_refined_cells_manifest(
+        manifest_path,
+        out,
+        workflow_name="test",
+        pack_target_s=600.0,
+        pack_marginal_s=0.5,
+        pack_load_s=60.0,
+    )
+    doc = json.loads(out.read_text())
+    tasks = doc["tasks"]
+    total = sum(len(inflate_cells(t["task_args"])) for t in tasks)
+    assert total == EXPECTED_TOTAL_CELLS      # nothing dropped, nothing duplicated
+    assert len(tasks) < EXPECTED_N_TASKS      # packing must reduce task count
+
+
+def test_exclude_done_subtracts_prior_partials(manifest_path, tmp_path):
+    from idd_tools.jobmon import inflate_cells
+
+    # Build a prior manifest, fake one completed partial for its task 0.
+    prior = tmp_path / "cells_prior.json"
+    build_refined_cells_manifest(manifest_path, prior, workflow_name="test")
+    prior_doc = json.loads(prior.read_text())
+    n_done = len(inflate_cells(prior_doc["tasks"][0]["task_args"]))
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "dh_task_00000.parquet").touch()
+
+    out = tmp_path / "cells_rebuilt.json"
+    build_refined_cells_manifest(
+        manifest_path,
+        out,
+        workflow_name="test",
+        pack_target_s=600.0,
+        exclude_done_manifest=prior,
+        exclude_done_partials=partials,
+    )
+    doc = json.loads(out.read_text())
+    total = sum(len(inflate_cells(t["task_args"])) for t in doc["tasks"])
+    assert total == EXPECTED_TOTAL_CELLS - n_done
+
+
+def test_exclude_done_requires_both_options(manifest_path, tmp_path):
+    with pytest.raises(ValueError, match="together"):
+        build_refined_cells_manifest(
+            manifest_path,
+            tmp_path / "x.json",
+            workflow_name="test",
+            exclude_done_manifest=manifest_path,
+        )
