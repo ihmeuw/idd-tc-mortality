@@ -236,6 +236,62 @@ def _build_model_predictions_df(
     return out
 
 
+def _chunk_path(entries_dir: Path, task_index: int, k: int) -> Path:
+    return entries_dir / f"dh_task_{task_index:05d}_chunk_{k:04d}.parquet"
+
+
+def _load_cell_chunks(entries_dir: Path, task_index: int, chunk_size: int,
+                      ) -> tuple[list[dict], int]:
+    """Rows + resume cell-index from contiguous existing chunk checkpoints.
+
+    Cells-mode tasks write a chunk parquet every ``chunk_size`` cells in
+    manifest order, so k contiguous chunk files mean the first
+    ``k * chunk_size`` cells are fully done — a retried task resumes there
+    instead of recomputing from zero. The final ``dh_task_*.parquet`` partial
+    still contains ALL rows; the assembler's non-recursive ``dh_*.parquet``
+    glob never sees the entries/ subdirectory.
+    """
+    rows: list[dict] = []
+    k = 0
+    while True:
+        p = _chunk_path(entries_dir, task_index, k)
+        if not p.exists():
+            break
+        rows.extend(pd.read_parquet(p).to_dict("records"))
+        k += 1
+    return rows, k * chunk_size
+
+
+def _flush_model_predictions(buffer: dict[str, list[pd.DataFrame]],
+                             model_pred_dir: Path) -> None:
+    """Write each buffered config's frames as ONE ``{mid}_predictions.parquet``
+    with all fold_tags stacked. Batching cuts NFS file-creates ~6x per config
+    — the 2026-07-31 write-saturation lever. Readers resolve batched and
+    per-fold layouts via ``evaluate.pred_layout.load_model_predictions``."""
+    for mid, frames in buffer.items():
+        _save_model_predictions_parquet(
+            pd.concat(frames),
+            model_pred_dir / f"{mid}_predictions.parquet",
+        )
+    buffer.clear()
+
+
+def _nfs_safe_replace(tmp: str, path: Path) -> None:
+    """os.replace tolerant of NFS non-idempotent rename.
+
+    Under filer load, a rename RPC can time out and be retransmitted after
+    the server already applied it; the retry then raises ENOENT even though
+    the rename succeeded. If the destination exists and the tmp is gone,
+    the write is complete — swallow the phantom error.
+    """
+    try:
+        os.replace(tmp, path)
+    except FileNotFoundError:
+        if Path(path).exists() and not os.path.exists(tmp):
+            return
+        raise
+
+
 def _save_model_predictions_parquet(df_out: pd.DataFrame, path: Path) -> None:
     """Atomically write an enriched model predictions DataFrame to parquet."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,13 +299,28 @@ def _save_model_predictions_parquet(df_out: pd.DataFrame, path: Path) -> None:
     os.close(fd)
     try:
         df_out.to_parquet(tmp, index=True)
-        os.replace(tmp, path)
+        _nfs_safe_replace(tmp, path)
     except Exception:
         try:
             os.unlink(tmp)
         except OSError:
             pass
         raise
+
+
+def _cells_progress_line(done: int, total: int, elapsed_s: float) -> str:
+    """One-line progress marker for cells mode: count, rate, and ETA.
+
+    Emitted every --progress-every cells so a live task's .err log shows where
+    it is and whether the per-cell rate is degrading (the contention signal).
+    """
+    pct = 100.0 * done / total if total else 100.0
+    rate = done / elapsed_s if elapsed_s > 0 else 0.0
+    eta = (total - done) / rate if rate > 0 else float("nan")
+    return (
+        f"Cells progress: {done}/{total} ({pct:.0f}%), "
+        f"elapsed {elapsed_s:.0f}s, {rate:.2f} cells/s, eta {eta:.0f}s"
+    )
 
 
 def _save_component_predictions_parquet(series: pd.Series, path: Path) -> None:
@@ -260,7 +331,7 @@ def _save_component_predictions_parquet(series: pd.Series, path: Path) -> None:
     os.close(fd)
     try:
         df_out.to_parquet(tmp, index=True)
-        os.replace(tmp, path)
+        _nfs_safe_replace(tmp, path)
     except Exception:
         try:
             os.unlink(tmp)
@@ -329,6 +400,7 @@ def _evaluate_group(
     result_cache: dict,
     pred_cache_full: dict,
     saved_component_ids: set,
+    task_index: int | None = None,
     tic: _Tic,
 ) -> list[dict]:
     """Evaluate all valid DH combinations for a filtered spec set.
@@ -375,11 +447,19 @@ def _evaluate_group(
 
     comp_pred_dir  = output_path / "component_predictions"
     model_pred_dir = output_path / "model_predictions"
+    if task_index is not None:
+        # Shard per task: concurrent creates into ONE giant directory
+        # serialize on NFS metadata updates, capping aggregate throughput
+        # fleet-wide (2026-07-31 incident). Readers resolve both layouts via
+        # evaluate.pred_layout.find_model_predictions.
+        model_pred_dir = model_pred_dir / f"task_{task_index:05d}"
     comp_pred_dir.mkdir(parents=True, exist_ok=True)
     model_pred_dir.mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
     n_done = 0
+    # Per-config prediction frames, flushed as one batched parquet per config.
+    _pred_buffer: dict[str, list[pd.DataFrame]] = {}
 
     any_death_mask = any_death.astype(bool)
 
@@ -565,13 +645,14 @@ def _evaluate_group(
                         # config. Gated by --skip-model-predictions because at
                         # refined scale this is the dominant NFS write cost.
                         if not skip_model_predictions:
-                            _save_model_predictions_parquet(
+                            # New config starting: flush the previous one so the
+                            # buffer never holds more than one config's frames.
+                            _flush_model_predictions(_pred_buffer, model_pred_dir)
+                            _pred_buffer.setdefault(mid, []).append(
                                 _build_model_predictions_df(
                                     pred_series, df, death_rate, any_death,
                                     threshold_rate, fold_tag="insample",
-                                ),
-                                model_pred_dir / f"{mid}_insample_predictions.parquet",
-                            )
+                                ))
 
                         # ---- OOS evaluation (per seed) ----------------------------
                         if fold_df is None:
@@ -781,15 +862,15 @@ def _evaluate_group(
 
                             # Gated for the same reason as the IS write above.
                             if not skip_model_predictions:
-                                _save_model_predictions_parquet(
+                                _pred_buffer.setdefault(mid, []).append(
                                     _build_model_predictions_df(
                                         oos_preds, df, death_rate, any_death,
                                         threshold_rate, fold_tag=oos_fold_tag,
                                         heldout_fold_tags=heldout_tags,
-                                    ),
-                                    model_pred_dir / f"{mid}_{oos_fold_tag}_predictions.parquet",
-                                )
+                                    ))
 
+    if not skip_model_predictions:
+        _flush_model_predictions(_pred_buffer, model_pred_dir)
     return rows
 
 
@@ -886,6 +967,37 @@ def _evaluate_group(
     help="Index into --task-file's or --cells-file's tasks list. Required if either is set.",
 )
 @click.option(
+    "--progress-every",
+    "progress_every",
+    default=64,
+    show_default=True,
+    type=int,
+    help="Cells mode: log a one-line progress marker (count, rate, ETA) every N "
+         "cells, so a running task shows where it is from its .err log. Costs one "
+         "log line per N cells — negligible I/O.",
+)
+@click.option(
+    "--progress-seconds",
+    "progress_seconds",
+    default=60.0,
+    show_default=True,
+    type=float,
+    help="Cells mode: also emit the progress marker whenever this many seconds "
+         "have passed since the last one, so slow-cell stretches still report "
+         "every minute. Each cell slower than this also gets its own line "
+         "identifying the family/threshold that consumed the time.",
+)
+@click.option(
+    "--checkpoint-cells",
+    "checkpoint_cells",
+    default=256,
+    show_default=True,
+    type=int,
+    help="Cells mode: write a chunk checkpoint to partials/entries/ every N "
+         "cells so a killed/timed-out task resumes from its last chunk on "
+         "retry instead of recomputing from zero. 0 disables.",
+)
+@click.option(
     "--bundle-file",
     "bundle_file",
     default=None,
@@ -934,6 +1046,9 @@ def main(
     task_file: str | None,
     cells_file: str | None,
     task_index: int | None,
+    progress_every: int,
+    progress_seconds: float,
+    checkpoint_cells: int,
     bundle_file: str | None,
     bundle_index: int | None,
     skip_model_predictions: bool,
@@ -1002,6 +1117,7 @@ def main(
         result_cache=result_cache,
         pred_cache_full=pred_cache_full,
         saved_component_ids=saved_component_ids,
+        task_index=task_index,
         tic=tic,
     )
 
@@ -1107,8 +1223,23 @@ def main(
             task_index, len(cell_list),
         )
 
-        all_rows: list[dict] = []
-        for cell in cell_list:
+        entries_dir = output_path / "partials" / "entries"
+        entries_dir.mkdir(parents=True, exist_ok=True)
+        if checkpoint_cells:
+            all_rows, _start_cell = _load_cell_chunks(
+                entries_dir, task_index, checkpoint_cells)
+        else:
+            all_rows, _start_cell = [], 0
+        _rows_flushed = len(all_rows)
+        if _start_cell:
+            logger.info("Resuming task %d from chunk checkpoints: first %d "
+                        "cells already done.", task_index, _start_cell)
+        _t0 = time.monotonic()
+        _last_ping = _t0
+        for _i_cell, cell in enumerate(cell_list, start=1):
+            if _i_cell <= _start_cell:
+                continue
+            _cell_t0 = time.monotonic()
             s1_spec   = available[cell["s1_spec_id"]]
             s2_spec   = available[cell["s2_spec_id"]]
             bulk_spec = available[cell["bulk_spec_id"]]
@@ -1127,6 +1258,31 @@ def main(
                 decouple_covs=True,
                 **_eval_kwargs,
             ))
+            _now = time.monotonic()
+            _cell_dur = _now - _cell_t0
+            if _cell_dur >= progress_seconds:
+                # Name the cell that ate the time — the shape diagnostic.
+                logger.info(
+                    "Slow cell %d/%d: tail=%s/%s q=%.2f took %.0fs",
+                    _i_cell, len(cell_list),
+                    tail_spec["family"], tail_spec["exposure_mode"],
+                    q, _cell_dur,
+                )
+            if (_i_cell % progress_every == 0
+                    or _i_cell == len(cell_list)
+                    or _now - _last_ping >= progress_seconds):
+                logger.info(_cells_progress_line(
+                    _i_cell, len(cell_list), _now - _t0,
+                ))
+                _last_ping = _now
+            if checkpoint_cells and _i_cell % checkpoint_cells == 0:
+                # Chunk checkpoint: a killed task resumes here, not at zero.
+                _save_model_predictions_parquet(
+                    pd.DataFrame(all_rows[_rows_flushed:]),
+                    _chunk_path(entries_dir, task_index,
+                                _i_cell // checkpoint_cells - 1),
+                )
+                _rows_flushed = len(all_rows)
 
         rows = all_rows
         partials_dir = output_path / "partials"
@@ -1184,7 +1340,7 @@ def main(
             )
         if out_path.exists():
             out_path.unlink()
-        os.replace(tmp, out_path)
+        _nfs_safe_replace(tmp, out_path)
     except Exception:
         try:
             os.unlink(tmp)

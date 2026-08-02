@@ -43,6 +43,7 @@ import pandas as pd
 
 from idd_tc_mortality.cache import component_id, load_result, model_id
 from idd_tc_mortality.combine import assemble_dh_prediction
+from idd_tc_mortality.evaluate.pred_layout import load_model_predictions
 from idd_tc_mortality.distributions import get_family
 from idd_tc_mortality.distributions.base import FitResult
 from idd_tc_mortality.features import align_X, build_X
@@ -1474,13 +1475,11 @@ class StagePlotter:
 
         mid = model_id(s1_spec, s2_spec, bulk_spec, tail_spec)
         fold_tag = f"oos_seed{seed}"
-        parquet_path = (
-            self._output_dir / "model_predictions" / f"{mid}_{fold_tag}_predictions.parquet"
-        )
-
-        if not parquet_path.exists():
-            raise FileNotFoundError(
-                f"OOS predictions not found at {parquet_path}. "
-                "Run run-evaluate with fold assignments first."
+        try:
+            return load_model_predictions(
+                self._output_dir / "model_predictions", mid, fold_tag,
             )
-        return pd.read_parquet(parquet_path)
+        except FileNotFoundError as err:
+            raise FileNotFoundError(
+                f"{err}. Run run-evaluate with fold assignments first."
+            ) from err

@@ -28,6 +28,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from idd_tc_mortality.evaluate.pred_layout import load_model_predictions
+
 logger = logging.getLogger(__name__)
 
 
@@ -257,18 +259,21 @@ def load_observed_fit(mid: str, model_pred_dir: str | Path, input_path: str | Pa
     obs = pd.read_parquet(input_path).reset_index(drop=True)
     obs["sr"] = obs["path_to_top_parent"].apply(lambda p: int(str(p).split(",")[1]))
 
-    def _pred_deaths(fname: str):
-        pr = pd.read_parquet(md / fname, columns=["predicted_rate", "exposed"]).reset_index(drop=True)
+    def _pred_deaths(fold_tag: str):
+        pr = load_model_predictions(
+            md, mid, fold_tag, columns=["predicted_rate", "exposed"],
+        ).reset_index(drop=True)
         return (pr["predicted_rate"].to_numpy() * pr["exposed"].to_numpy())
 
-    obs["is_pred"] = _pred_deaths(f"{mid}_insample_predictions.parquet")
+    obs["is_pred"] = _pred_deaths("insample")
     seed_cols = []
     for s in range(n_seeds):
-        fp = md / f"{mid}_oos_seed{s}_predictions.parquet"
-        if fp.exists():
+        try:
             col = f"_oos{s}"
-            obs[col] = _pred_deaths(fp.name)
+            obs[col] = _pred_deaths(f"oos_seed{s}")
             seed_cols.append(col)
+        except FileNotFoundError:
+            continue
 
     agg = {"observed": ("deaths", "sum"), "is_pred": ("is_pred", "sum"),
            **{c: (c, "sum") for c in seed_cols}}
