@@ -1,39 +1,33 @@
-[tool.poetry]
+[project]
 name = "idd-tc-mortality"
 version = "0.1.0"
 description = "IDD tropical cyclone mortality pipeline"
-authors = ["Bobby Reiner"]
+authors = [{ name = "Bobby Reiner" }]
 readme = "README.md"
-packages = [{ include = "idd_tc_mortality", from = "src" }]
+requires-python = ">=3.12,<4"
+dependencies = [
+    "numpy>=2.4",
+    "pandas>=3.0",
+    "statsmodels>=0.14",
+    "scipy>=1.17",
+    "click>=8.3",
+    "pyarrow>=23.0",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+    "scikit-learn>=1.8",
+    # Cluster-only leaf pipeline: jobmon is a core dep (STANDARDS.md §Environment).
+    # Exact pin is coordinated fleet-wide — bump via STANDARDS.md first.
+    "jobmon_installer_ihme==10.12.2",
+    "xarray>=2026.4",
+    "netCDF4>=1.7",
+    "cartopy>=0.25",
+    "idd-tools[jobmon]",
+    "nbconvert>=7.17",
+    "adjusttext>=1.4",
+    "textalloc>=1.2",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.12,<4"
-numpy = "*"
-pandas = "*"
-statsmodels = "*"
-scipy = "*"
-click = "*"
-pyarrow = "*"
-matplotlib = "*"
-seaborn = "*"
-scikit-learn = "*"
-ipykernel = "^7.2.0"
-jobmon_installer_ihme = "==10.12.2"  # IHME Jobmon workflow installer — exact pin per STANDARDS.md §Environment
-xarray = "^2026.4.0"
-netCDF4 = "*"
-cartopy = "^0.25.0"
-idd-tools = {path = "/mnt/share/homes/bcreiner/repos/idd-tools", develop = true}
-nbconvert = "^7.17.1"
-adjusttext = "^1.4.0"
-textalloc = "^1.2.3"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "*"
-pytest-cov = "*"
-ruff = "*"
-mypy = "*"
-
-[tool.poetry.scripts]
+[project.scripts]
 run-validate = "idd_tc_mortality.step_00_validate.run_validate:main"
 run-fit-component = "idd_tc_mortality.fit.run_component:main"
 run-fit-orchestrate = "idd_tc_mortality.fit.orchestrate:main"
@@ -66,17 +60,32 @@ run-predict-cell = "idd_tc_mortality.predict.predict_cell:main"
 run-predict-consolidated = "idd_tc_mortality.predict.orchestrate_consolidated:main"
 run-finalize-deliverable = "idd_tc_mortality.predict.finalize_deliverable:main"
 
-[[tool.poetry.source]]
-# IHME-internal artifactory — required for `jobmon_installer_ihme` and any
-# other internal-only deps. Public PyPI does not have these packages.
-# `supplemental` priority: poetry tries PyPI first, falls back here.
-name = "ihme"
-url = "https://artifactory.ihme.washington.edu/artifactory/api/pypi/pypi-shared/simple"
-priority = "supplemental"
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "ipykernel>=7",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+# IHME-internal artifactory — required for jobmon_installer_ihme. NOT explicit:
+# internal packages pull internal-only TRANSITIVE deps (jobmon-client, jobmon-core,
+# jobmon-slurm, slurm-rest), and uv source pins cover direct deps only —
+# explicit = true makes those transitives unresolvable. As a non-explicit index
+# uv consults ihme before default PyPI, so internal names resolve here and
+# public names fall through.
+[[tool.uv.index]]
+name = "ihme"
+url = "https://artifactory.ihme.washington.edu/artifactory/api/pypi/pypi-shared/simple"
+
+[tool.uv.sources]
+jobmon_installer_ihme = { index = "ihme" }
+idd-tools = { path = "/mnt/share/homes/bcreiner/repos/idd-tools", editable = true }
 
 [tool.ruff]
 line-length = 100
