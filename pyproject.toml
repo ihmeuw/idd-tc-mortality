@@ -22,9 +22,12 @@ dependencies = [
     "netCDF4>=1.7",
     "cartopy>=0.25",
     "idd-tools[jobmon]",
+    "idd-figures[maps]",
+    "geopandas>=1.1",
     "nbconvert>=7.17",
     "adjusttext>=1.4",
     "textalloc>=1.2",
+    "rasterio>=1.5.1",
 ]
 
 [project.scripts]
@@ -57,6 +60,10 @@ run-predict-postprocess = "idd_tc_mortality.predict.postprocess:main"
 run-aggregate-finalize = "idd_tc_mortality.predict.aggregate_finalize:main"
 run-build-predict-cells = "idd_tc_mortality.predict.build_predict_cells:main"
 run-predict-cell = "idd_tc_mortality.predict.predict_cell:main"
+run-storm-three-panel = "idd_tc_mortality.viz.storm_three_panel:main"
+run-blend-historical = "idd_tc_mortality.predict.blend_historical:main"
+run-shipped-figures = "idd_tc_mortality.viz.shipped_figures:main"
+run-basin-map = "idd_tc_mortality.viz.basin_map:main"
 run-predict-consolidated = "idd_tc_mortality.predict.orchestrate_consolidated:main"
 run-finalize-deliverable = "idd_tc_mortality.predict.finalize_deliverable:main"
 
@@ -85,7 +92,10 @@ url = "https://artifactory.ihme.washington.edu/artifactory/api/pypi/pypi-shared/
 
 [tool.uv.sources]
 jobmon_installer_ihme = { index = "ihme" }
-idd-tools = { path = "/mnt/share/homes/bcreiner/repos/idd-tools", editable = true }
+idd-tools = { git = "ssh://git@github.com/ihmeuw/idd-tools.git", branch = "main" }
+# Cross-repo idd-* deps pin `main`; uv.lock records the commit.
+# Bump: uv lock --upgrade-package idd-figures
+idd-figures = { git = "ssh://git@github.com/ihmeuw/idd-figures.git", branch = "main" }
 
 [tool.ruff]
 line-length = 100
