@@ -217,6 +217,26 @@ def _scatter_obs_is_visible(scatter_style: Optional[dict]) -> bool:
     return scatter_style.get('show', True) is not False
 
 
+def gpd_rate_pdf(r, sigma: float, xi: float, threshold_rate: float) -> np.ndarray:
+    """GPD density of the excess ``w = r - threshold_rate`` for ``W ~ GPD(sigma, xi)``.
+
+    ``f(w) = (1/sigma) (1 + xi w / sigma)^(-1/xi - 1)``; exponential limit at
+    ``|xi| < 1e-6``; zero beyond the finite support ``sigma/|xi|`` when ``xi < 0``.
+    This is the INTERIOR density shared by the ``gpd`` and ``gpd_cens`` tails
+    (censoring at the physical cap is predict-only: it moves mass above the
+    per-storm cap into an atom, and leaves the interior shape unchanged).
+    """
+    w = np.asarray(r, dtype=float) - float(threshold_rate)
+    sigma = float(sigma)
+    if abs(xi) < 1e-6:
+        return np.exp(-w / sigma) / sigma
+    base = 1.0 + xi * w / sigma
+    out = np.zeros_like(w)
+    ok = base > 0
+    out[ok] = base[ok] ** (-1.0 / xi - 1.0) / sigma
+    return out
+
+
 def _stage_draw_to_fit_result(stage_draw) -> FitResult:
     """Wrap a StageDraw as a FitResult so the existing `_predict` path works.
 
@@ -378,6 +398,20 @@ class StagePlotter:
             self._result_cache[cid] = load_result(cid, self._results_dir)
         return self._result_cache[cid]
 
+    def register_results(self, model_row: pd.Series | dict, results: dict[str, FitResult]) -> None:
+        """Inject already-fitted components for ``model_row`` instead of reading ``results_dir``.
+
+        ``results`` maps stage name ('s1', 's2', 'bulk', 'tail') to the FitResult
+        (e.g. ``refit_model_with_objects(...)['is'][stage]['fit_result']``). Each is
+        cached under the component id the plotter reconstructs for that stage, so
+        every ``vet_*`` call for this model finds it without a pickle on disk.
+        """
+        for stage, result in results.items():
+            if stage not in ("s1", "s2", "bulk", "tail"):
+                raise ValueError(f"unknown stage {stage!r}")
+            spec = self._reconstruct_is_spec(model_row, stage)
+            self._result_cache[component_id(spec)] = result
+
     # ------------------------------------------------------------------
     # Internal: subset for stage and prediction helpers
     # ------------------------------------------------------------------
@@ -420,6 +454,9 @@ class StagePlotter:
             "is_island":  int(data["is_island"].mode().iloc[0]),
             "exposed":    float(data["exposed"].median()),
         }
+        if "exposed_population" in data.columns:
+            # cap-aware tail families (needs_cap) read c_i = exposed_population / exposed
+            ref["exposed_population"] = float(data["exposed_population"].median())
         if overrides is not None:
             ref.update(overrides)
 
@@ -459,12 +496,19 @@ class StagePlotter:
             pred_fn = family_info["predict"]
             if family_info["log_exposed"]:
                 preds = pred_fn(result, X, log_exposed)
+            elif family_info.get("needs_cap"):
+                # Cap-aware tail (gpd_cens, log_logistic_cens, ...): pass the per-row
+                # excess-scale cap H_i, as evaluate.predict_component does.
+                from idd_tc_mortality.tail_cap import excess_cap
+                preds = pred_fn(result, X, excess_cap(pred_data, threshold_rate))
             else:
                 preds = pred_fn(result, X)
 
             if spec["family"] == "beta":
                 preds = preds * threshold_rate
-            elif spec["family"] == "gpd":
+            elif component == "tail" and (
+                family_info.get("tail_outcome") == "excess" or spec["family"] == "gpd"
+            ):
                 preds = preds + threshold_rate
 
         return np.asarray(preds)
@@ -854,8 +898,12 @@ class StagePlotter:
     ) -> list[tuple]:
         """5x5 quintile-cross overlay of the bulk PDF on the rate scale.
 
-        Currently bulk/scaled_logit only — fits a Gaussian on the link-scale
-        outcome and renders the back-transformed density on `rate`.
+        Supported: bulk/scaled_logit (Gaussian on the link scale, back-transformed
+        to `rate`); tail/log_logistic and tail/log_logistic_cens (log-logistic on
+        the excess); tail/gpd and tail/gpd_cens (GPD on the excess). The censored
+        variants share their uncensored family's interior density — censoring at
+        the physical cap is predict-only. The tail shape (k or xi) is read from
+        `result.meta['shape_param']`, or from `StageDraw.scale` when draws are given.
 
         Required panel_spec fields:
             color_col      — covariate whose quintiles drive line color
@@ -882,7 +930,11 @@ class StagePlotter:
         """
         component = spec.get('component')
         family    = spec.get('family')
-        _SUPPORTED = {('bulk', 'scaled_logit'), ('tail', 'log_logistic')}
+        _SUPPORTED = {
+            ('bulk', 'scaled_logit'),
+            ('tail', 'log_logistic'), ('tail', 'log_logistic_cens'),
+            ('tail', 'gpd'), ('tail', 'gpd_cens'),
+        }
         if (component, family) not in _SUPPORTED:
             raise ValueError(
                 f"cont_pdf_quintile supports {_SUPPORTED}. "
@@ -985,6 +1037,9 @@ class StagePlotter:
             x = r - T_val  # excess above threshold
             return (k / alpha) * (x / alpha) ** (k - 1) / (1 + (x / alpha) ** k) ** 2
 
+        # (r_grid, scale=exp(eta), shape, T) -> density; shape is k or xi by family
+        _tail_pdf = gpd_rate_pdf if family in ('gpd', 'gpd_cens') else _pdf_rate_loglogistic
+
         if is_tail:
             # Grid over excess above T; use geomspace so log x-axis looks good.
             excess_lo = T * lo_frac
@@ -1015,7 +1070,7 @@ class StagePlotter:
             line_color = style.get('pred_line', {}).get('color', '#4477AA')
             if is_tail:
                 x_vals  = r_grid * x_scale
-                density = _pdf_rate_loglogistic(r_grid, np.exp(eta), k_shape, T)
+                density = _tail_pdf(r_grid, np.exp(eta), k_shape, T)
             else:
                 x_vals  = r_grid * x_scale
                 density = _pdf_rate(r_grid, eta, sigma, T)
@@ -1030,7 +1085,7 @@ class StagePlotter:
                     eta_d = float(x_vec @ np.asarray(sd.params))
                     if is_tail:
                         k_d   = float(sd.scale) if sd.scale is not None else k_shape
-                        all_densities.append(_pdf_rate_loglogistic(r_grid, np.exp(eta_d), k_d, T))
+                        all_densities.append(_tail_pdf(r_grid, np.exp(eta_d), k_d, T))
                     else:
                         sig_d = float(np.sqrt(sd.scale)) if sd.scale is not None else sigma
                         all_densities.append(_pdf_rate(r_grid, eta_d, sig_d, T))
@@ -1047,7 +1102,7 @@ class StagePlotter:
                     eta = float(_build_x(scenario) @ beta)
                     if is_tail:
                         alpha   = np.exp(eta)
-                        density = _pdf_rate_loglogistic(r_grid, alpha, k_shape, T)
+                        density = _tail_pdf(r_grid, alpha, k_shape, T)
                         x_vals  = r_grid * x_scale
                     else:
                         density = _pdf_rate(r_grid, eta, sigma, T)
@@ -1215,7 +1270,7 @@ class StagePlotter:
             spec carries `'uncertainty': {'show': True, ...}` will plot a
             percentile band around the prediction line. Each panel pulls
             this stage's StageDraw from each DrawModel and samples the grid.
-            Currently honored by `cont_overall` panels only.
+            Honored by `cont_overall` and `cont_pdf_quintile` panels.
         """
         cfg = _deep_merge(DEFAULT_VET_CONFIG, config)
         if figsize is not None:
