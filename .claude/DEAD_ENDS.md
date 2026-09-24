@@ -93,3 +93,41 @@
 ## 2026-06-09: Big-bundle / concurrency-throttle approach for evaluate
 **What I tried:** Explored reducing concurrency (cap `max_concurrently_running`) and/or increasing `BUNDLE_SIZE` to reduce total NFS reads via within-task caching.
 **Why I stopped:** Probe data (5 tasks=15 rows/s, 10 tasks=2.5 rows/s, 50 tasks=1 row/s) confirmed the contention was too severe even at low concurrency. The correct fix — re-fitting in-memory — eliminates the read storm entirely rather than throttling around it, with effectively no cost (fitting is ~0.1s vs the NFS read that took arbitrarily long under contention).
+
+## 2026-07-29: 576-cap task partitioning + 2×-isolated-probe runtime sizing
+**What I tried:** Split refined/final cells tasks at ≤576 cells (`--max-per-task 576`) and sized Slurm runtime at 2× the isolated single-task probe (6m → 12m ask), launching both vintages simultaneously (~3,000 tasks).
+**Why I stopped:** Fleet contention stretched identical tasks >2× past the ceiling → ~1,800 TIMEOUT instances, ~700 CPU-hours lost, and chunked groups re-fit shared components per fragment. The May lesson (deployment = isolated × 1.5–5× contention) was in CLAUDE.md the whole time. Replaced by whole-group/cost-aware packing and measured-deployment sizing.
+**Refs:** wf 606410/606411; DECISIONS 2026-07-31 postmortem.
+
+## 2026-07-31: Per-directory sharding as the write-saturation fix
+**What I tried:** Sharded `model_predictions/` into per-task subdirectories on the theory that a 300K-entry directory serializes NFS metadata updates.
+**Why I stopped:** Necessary but not sufficient — a 188-task fleet with sharded writes still crawled at 0.02–0.05 c/s; the cap is effectively volume-level create throughput, not per-directory. The real lever was **batching** (6× fewer files per config), confirmed ~25× on the retry wave. Sharding retained (harmless, helps `ls`).
+**Refs:** run_evaluate.py sharding + `_flush_model_predictions`; DECISIONS 2026-07-31.
+
+## 2026-07-31: Uniform / probe-derived marginal costs for task packing
+**What I tried:** Packed final tasks first with a uniform marginal (0.49 s/cell → 1.0), then with probe-fitted per-tier costs (gpd_cens 7.3 s/cell, cheap families ~1.2–2.0).
+**Why I stopped:** Under fleet conditions the probe costs inverted: gpd_cens tasks (few cells) finished first at ~85% while cheap-family tasks (~2,000 cells) straggled — the probe overpriced gpd_cens ~6× and underpriced cheap families, because 20-way probe contention ≠ 188-way fleet contention. Packing needs fleet-measured rates (the monitor notebook computes them); probe costs are only a first draft.
+**Refs:** `final_run_monitor_v2000.ipynb`; cost probe wf 608355.
+
+## 2026-09-23: idd-figures map_facet for the three-panel storm figure
+**What I tried:** Laying out RR / density / person-years as one `map_facet` row with `cbar: "each"`.
+**Why I stopped:** `map_facet` charges every inter-row gap as the title allowance (`panel_title_h`),
+so the map-to-colorbar gap could not be reduced without crushing the two-line titles. Replaced by a
+hand-built `panel_grid` (`build_panel_row`) whose gap is its own knob; `map_cell_painter` and the
+geometry helpers are still idd-figures'.
+**Refs:** `viz/storm_three_panel.py::build_panel_row`, `figure_geometry`.
+
+## 2026-09-23: A0 super-region draw file as the figure source for the final model
+**What I tried:** Answering "cumulative deaths" and planning figures from
+`04-predict/20260804_meanfwd/c1s1_sr_final_gpd_cens_q95_e7a78b19.parquet`.
+**Why I stopped:** Bobby wants the shipped blend only; the A0 file differs (unadjusted ~50% lower)
+and its raked draw means had been misread as medians. Replaced by `run-blend-historical` +
+`run-shipped-figures` on `direct_risk/2026_08_20_v2000_*`.
+**Refs:** DECISIONS 2026-09-23 (blended deliverable only).
+
+## 2026-09-23: Grepping notebooks for ERA5 usage
+**What I tried:** `grep -il era5` over notebooks to find where ERA5 calibrates anything in this repo.
+**Why I stopped:** Every hit was a chance 4-character match inside base64 image outputs; no code or
+markdown cell in this repo or rra-flooding mentions ERA5. Search notebook SOURCE cells (json) instead
+of raw files. (ERA5 lives in climate-data: reference climatology 2019–2023; and as 2016–2021 forcing
+for the tc_risk downscaler.)

@@ -576,3 +576,187 @@ Total: 3 × 2 × 2 × 2 × 6 × 4 × 8 = 4,608 configs per vintage; 13,824 acros
 - **Tail**: drop `nb`, `poisson`, `log_logistic_shadow`, `gpd_shadow` (best-rank-achievable > 20 in nearly every metric×threshold cell + structurally threshold-blind). Keep the 8 honest-mean families: gamma, lognormal, truncated_normal, weibull_mean (D), gpd_cens, log_logistic_cens (C), gpd_trunc, log_logistic_trunc (B).
 **Why:** Preliminary vetting in `notebooks/20260722/dh_preliminary_diagnostics_v1985.ipynb` (attainability heatmap + per-family metric dot plots + fwd_pred_obs_ratio over/under on symlog). Median-reporting tails were already excluded upstream (honest-only sweep); the A/shadow families screen out here as non-competitive and threshold-blind. S1/S2/bulk decisions reproduce the standard-run choices (structural, expected to transfer across vintages).
 **Revisit if:** v2000 screening disagrees (decisions are per-vintage — the tail drop-list especially should be re-confirmed against v2000's plots); or the intermediate stage (drop-top-N / per-storm / per-year) overturns a family kept on preliminary metrics alone.
+
+## 2026-07-27: Intermediate stage design + drop-top-N is a loose filter (honest tailvariant)
+**Decision:** Intermediate = 633 survivor-filtered honest specs fed via `--refined-specs` (NOT `--survivors` — that flag filters the default MEDIAN enumeration, which lacks our honest families), coupled, model_predictions ON, `--bundle-size 4` (fills the ≥5m Slurm floor with real work). Same spec file both vintages. The drop-top-N trimmed-calibration diagnostic is a LOOSE sanity filter for this data, not a fine cull; make the intermediate cull on the OOS calibration gate + coverage + the n=0/n=1 per-family view.
+**Why:** v1985 deaths are hyper-concentrated — top-5 storms = 80.6%, top-25 = 89.2% of all deaths across 1,584 storms. Median trimmed pred/obs jumps n1 1.01 → n2 2.46 → n25 5.66; models are carried by the top 1–2 storms, so drop-top-N mostly measures concentration, not model quality (all thresholds/families collapse together at the same band tightness). Retuned `N_SWEEP` [0,5,10,25]→[0,1,2,3,5] (the informative range). Added `--bundle-size` flag + `stability_attrition_curves` (viz/screening.py). Also: `screening` helpers moved from `reports/_helpers.py` into the lib (shim left for existing callers).
+**Revisit if:** a vintage's deaths are less concentrated (drop-top-N regains discriminating power), or the cull needs a harder filter than the OOS gate + coverage + per-family view.
+
+## 2026-07-27: Landed the accumulated working tree as 8 themed commits
+**Decision:** Committed everything uncommitted since ~2026-07-13 (226e9fd..0fca314): tailvariant intermediate + screening + bundle-size; deps; sensitivity + unadjusted; final-selection/draw/gpd pipeline + tests; 20260714 vintage notebooks; SR comparison; heavy-tail synthesis doc; gitignore + `.claude` tracking. Dropped + gitignored: `notebooks/20260515/` (old exploratory pile ~30MB), root `basin_comparison*.pdf`, rendered quarto output (`docs/**/*_files,html,pdf`), `dh_final_diagnostics_old.ipynb`.
+**Why:** Bobby: "commit everything or decide to drop it." Grouped into themed commits for a readable history; junk/regenerable outputs gitignored. Absolute `/mnt/...` paths in scripts/notebooks committed as-is (repo convention — no two-tier path system; de-facto private). NOT pushed.
+**Revisit if:** the repo goes public — absolute paths need the two-tier paths.yaml treatment first.
+
+## 2026-07-28: Refined culls decided per vintage via two-stage TOPSIS (and they diverged)
+**Decision:** Refined-stage axes from Bobby's two-stage cull in `notebooks/20260722/dh_refined_diagnostics_{v1985,v2000}.ipynb` (pre-cull TOPSIS at CULL_PCT=50 → family-level head(5) → threshold×family ranking): **v2000** keeps thresholds {0.70, 0.95} and families {gamma, log_logistic_trunc, log_logistic_cens, lognormal, gpd_cens}; **v1985** keeps {0.70, 0.85} and {…, gpd_trunc}. Final-grid covariate/exposure sets = merit-group top-10 pattern unions ∪ the 20260714 baseline sets. Aggregators (TOPSIS/Borda) are treated as *shortlisting instruments*: their verdicts move with metric set, cull fraction, and normalization pool (demonstrated: 50% vs 95% cull flips threshold 0.95 between top-10 and dead-last); axis calls rest on knob-invariance across the day's variants plus raw threshold-comparable frontiers.
+**Why:** A day of methodology stress-testing: rank-of-ranks and head(K) cuts launder score cliffs into ordinals; min-max scores are pool-relative with no absolute meaning; correlated metric panels don't multiply evidence. The per-vintage divergence is real signal (different data windows prefer different second thresholds and gpd variants).
+**Revisit if:** the final evaluate cleanly overturns a kept family/threshold across both vintages.
+
+## 2026-07-29: Per-vintage FINAL grids — identical-grid convention consciously broken
+**Decision:** Final grids are per-vintage, encoded as `grid/build_final_specs_tailvariant.GRIDS`: v1985 = 54,432 configs (6/3/9/12 cov sets, 7 tail pairs), v2000 = 158,400 (8/5/11/9, 10 pairs). Companion `build_final_cells --grid tailvariant-{v}` shares the constants. Prior cycles used one grid for all vintages; the union here would have exploded the cross (>500K configs) to no analytical benefit.
+**Why:** The refined culls genuinely diverged; forcing a union grid buys nothing but compute.
+**Revisit if:** cross-vintage universal-model selection is hampered by non-overlapping grids (universal matching is by CONFIG_COLS on the intersection).
+
+## 2026-07-31: Prediction-write architecture (the write-saturation postmortem)
+**Decision:** Evaluate workers now (1) write **one batched `{mid}_predictions.parquet` per config** (all fold_tags stacked) instead of six per-fold files; (2) shard `model_predictions/` by task; (3) tolerate NFS non-idempotent rename (`_nfs_safe_replace`); (4) checkpoint cells-mode every 256 cells to `partials/entries/` with contiguous-chunk resume; (5) ping progress every 60s and name any cell slower than 60s. Readers resolve every layout combination via `evaluate/pred_layout.load_model_predictions`. Task packing is cost-aware: per-(family@threshold) marginal costs from a 20-task probe sweep (`build_final_cost_probe`, idd-tools `build_size_sweep_manifest`/two-point fits) feed `pack_to_target` via `--pack-costs`.
+**Why:** Per-config-per-fold writes saturate the filer's metadata throughput at fleet scale — measured: solo 1.45 c/s, 21 writers ~0.65 (v1985 final, clean), 62 writers ~0.10–0.26, 188 writers 0.02–0.05; the retry wave with batched writes ran ~25× faster warm-up at the same concurrency, confirming the lever prospectively. Five earlier hypotheses (per-directory contention, node packing, intrinsic fit cost, per-dir sharding sufficiency, static volume cap) were each falsified by targeted checks; ~700 CPU-hours burned before the 576-cap/2×-isolated-sizing combination was abandoned (see DEAD_ENDS).
+**Revisit if:** the filer behavior changes, or per-task aggregated prediction files (one parquet per task) become worth the reader complexity.
+
+## 2026-07-31: v2000 final accepted at 154,000/158,400 configs (documented hole)
+**Decision:** `02-evaluate/20260722_v2000_final/dh_results.parquet` is accepted for selection work with a characterized gap: 4,400 configs — exactly gamma@0.70 × free+weight × multi-covariate tail sets — return **zero rows from evaluation, silently**. Deterministic (5 of every 18 cells in gamma@0.70 blocks), identical ~72% yield in the pre-change cost probes, so NOT caused by the day's worker changes; v1985 final is complete (54,432/54,432). Open items: local `--scope` repro; make zero-row cells log loudly; then `--exclude-done` top-up (~1.5 CPU-h) or documented exclusion. Until resolved, gamma@0.70 config counts are ~28% depressed — per-family count comparisons in the final notebooks must not be read at face value.
+**Why:** The hole is bounded, characterized, and cheap to close; blocking all selection work on it buys nothing.
+**Revisit if:** the repro shows the failure also corrupts *present* rows (nothing observed suggests so), or affects v1985 configs in ways the completeness check missed.
+
+## 2026-08-04: Final v2000 selection protocol (cull -> collapse -> gate -> prune -> rank) and the final trio
+**Decision:** Final model selection for the 20260722 v2000 honest-mean cycle is the
+protocol in `notebooks/20260722/dh_final_selection_v2000.ipynb`, and its output is a
+**trio of q=0.95, intercept-tail, excluded-exposure models** (one per surviving
+distributional family) rather than a single winner:
+- `gamma`    `7e4c6c32` — ratio 0.987, tail_cor ≡ 0 (constant tail), TOPSIS #2 / Borda #36
+- `gpd_cens` `e7a78b19` — ratio 1.004, tail_cor +0.057 (cap-driven), TOPSIS #1 / Borda #95
+- `log_logistic_trunc` `9c8497e7` — ratio 0.869, tail_cor +0.055 (cap-driven), TOPSIS #12 / Borda #7
+All three share S1 = logit/free/all-4-covs and S2 = logit/free/intercept; bulks are
+scaled_logit/free with basin+sdi(+wind). Configs + seed-mean metrics:
+`02-evaluate/20260722_v2000_final/_final3_20260804.json`; focus_model.json wired under
+`03-draws/20260722_v2000/<mid>/`; forecasts + figures in `04-predict/20260804_meanfwd/`.
+
+The protocol, in order, with the reason each step exists:
+1. **Structural gate before any metric sees the pool:** drop `free+weight` from tail
+   AND bulk. Exposure weighting degenerates tail fits into location-only "needles"
+   (cens k≈226; conditional spread ×1.3–1.8 vs residual scatter ×400–500) — a
+   pathology metrics reward (great MAE) rather than punish. Also subsumes the
+   gamma@0.70 IRLS-divergence hole. Known pathologies get structural bans, not votes.
+2. **Per-stage cull ("no redeeming quality"):** min-over-metrics gap to the stage best,
+   in seed-SE units (5 CV seeds share folds -> paired comparisons; effect sizes in
+   seed-SE, never t-stats). Min not max: max-over-metrics is conjunctive and empties
+   pools; a model survives if it's good at *something*.
+3. **Per-stage twin collapse:** options within 1 seed-SE of each other on every metric
+   (Chebyshev / complete linkage) merge into the most parsimonious representative.
+   Removes clone-blocks that otherwise stuff Borda/Kendall with duplicate voters.
+4. **Shape gate, not level gate:** trim ratios entangle level x allocation
+   (trim5 ≈ 5.8 x trim0 for every sane model). Gate on SHAPE = trim5/trim0 ≤ 7.0
+   (scale-invariant; ~5.8 = nobody-predicts-mega-storm-mass ceiling; gamma's
+   pathological rows ran 7.4–9.6). LEVEL is deliberately NOT gated — it is rake-fixable
+   and is judged in the ranking as a calibration metric instead. (First version gated
+   raw trim5 and was a level gate in disguise: it kept 0.6-ratio under-predictors and
+   culled calibrated models.)
+5. **Kendall-τ metric prune (with protection):** drop the redundant partner of any
+   |τ|≥0.7 pair. Empirically confirmed the level/shape decomposition: trim_n=1 -> trim_n=0
+   (|τ|=0.99) -> full ratio (|τ|=0.93) collapsed to one level voter; shape_oos survived
+   independently. Also: the composite cannot see what you don't feed it — a
+   commented-out tail_cor silently crowned ordering-blind models for two reruns; the
+   retained-metric printout is the audit for that.
+6. **Borda + TOPSIS on the cleaned pool, read as different questions:** TOPSIS =
+   magnitude-weighted distance to ideal (crowns champions of the widest-spread
+   dimension); Borda = rank-sum consistency (crowns all-rounders). Their agreement
+   after steps 1–5, stable under metric-set perturbation, is the convergence signal;
+   their residual disagreement is a real scientific weighting choice, resolved
+   explicitly (e.g. ordering floors), never by tuning weights until they agree.
+**Why a trio:** all three finalists are intercept tails (tail covariates buy nothing at
+q=0.95 — covariate siblings are twins), so the only axis left is the distributional
+assumption (light-tail gamma vs censored-GPD vs truncated-log-logistic). Forecast
+agreement across the trio = distribution choice doesn't matter; divergence = the real
+structural uncertainty, isolated. Note the honest caveats: gamma's tail is a constant
+(cor ≡ 0); gpd_cens/ll_trunc's +0.055–0.057 ordering comes entirely from the physical
+exposure cap, not covariates; ALL models forward-predict at ~0.49–0.57 (the SR mean+guard
+rake is load-bearing for every pick).
+**Revisit if:** the deliverable needs per-storm spatial discrimination (then the ordering
+champion gpd_cens@0.70/free, tail_cor 0.71, re-enters despite its 0.74 ratio and
+cross-threshold tail-metric incomparability); or the v1985 clone of this protocol
+disagrees with the family/threshold calls.
+
+<!-- The four 2026-08-06 entries below were appended on 2026-09-23 from the 2026-08-06 /bail
+     draft (DECISIONS_draft.md), unreviewed at the time. Note the 2026_08_26 A0-only ship they
+     describe was SUPERSEDED on 2026-08-20 by the A1/A0 blend ship (entry further down). -->
+
+## 2026-08-06: Shipped gpd_cens@0.95 draw-level deliverable (2026_08_26_v2000 files) [SUPERSEDED 2026-08-20]
+**Decision:** Shipped the final-pick gpd_cens (mid e7a78b19) as
+`direct_risk/2026_08_26_v2000_{adjusted_mean,unadjusted}_direct_deaths.{parquet,nc}` + model.json:
+cell deaths_c1_s1_o0_b1, paired draws (fit seed = storm_draw, M1 convention), A0 consolidated
+frame ONLY (189 locations vs M1's 398), hierarchy rollup, FHS population + death_rate per 100k,
+mean+sr31-guard rake. Re-shipped 15:18 with scenario-specific SDI.
+**Why:** Bobby supplied the target path; format replicates the shipped M1 files via the
+finalize_deliverable machinery.
+**Revisit if:** — superseded: the A1 blend was wanted and the 08_26 date was a typo (see 2026-08-20).
+
+## 2026-08-06: Rake ratios must be cell-consistent (c1s1 ratios for a c1s1 deliverable)
+**Decision:** The deliverable and all c1_s1 figures use rake ratios computed from the c1_s1
+draw-mean, NOT the c0_s0 point-forecast ratios. Same convention as M1's mean-adjusted files.
+**Why:** Coefficient/scale draws inflate the mean ~40–50% via Jensen on the log links; raking
+draw-level output with point-forecast ratios would leave the raked mean ~45% hot.
+**Revisit if:** a deliverable ever mixes cells, or the rake window changes.
+
+## 2026-08-06: M1 comparisons use the mean+guard M1 artifact, back-extended from its blend summary
+**Decision:** "vs M1" figures use `2026_07_13_adjusted_mean_sr31_guard` as M1-adjusted (not the
+median-raked `20260707_adjusted`) and extend M1 to 1985 from the 20260706/6004b730 blend summary
+(real ribbons pre-2015 unadjusted; ratio-scaled mean line only pre-2015 raked).
+**Why:** Apples-to-apples with our mean+guard convention and the no-median rule.
+**Revisit if:** M1 historical draws are regenerated.
+
+## 2026-08-06: Scenario-specific SDI wired per scenario; files found near-identical
+**Decision:** All forecast scripts carry an SDI_SCEN map (ssp245→s130v89, ssp126→s160v1,
+ssp585→s161v1, historical→ssp245 table). Rake windows (≤2023) draw from the past file, so ratios
+are unchanged.
+**Why:** Scenario SDI exists. Finding: the three files differ by ≤0.003 SDI by 2100 — scenario
+spread in the forecasts (~7% at 2050, ssp126 highest) is storm-frame-driven, not SDI.
+**Revisit if:** FHS confirms the files should diverge (upstream question, open).
+
+## 2026-08-20: Corrected ship = A1/A0 blend with the rake recomputed on the blend (2026_08_20_v2000 files)
+**Decision:** Re-shipped gpd_cens e7a78b19 as `direct_risk/2026_08_20_v2000_{adjusted_mean,
+unadjusted}_direct_deaths.{parquet,nc}` + model.json (`04-predict/20260806_shipped/
+_ship_gpd_cens_blend.py`): both consolidated frames predicted (A0 countries + A1 admin-1), blended
+at draw level like M1 (A1 units for the 10 subnationalized countries, A0 rows for the rest,
+parents dropped), full FHS rollup (398 locations), super-region mean+guard rake recomputed ON THE
+BLEND (ref historical+ssp245 2000–2023; ratios stored in model.json), ssp 2015–2100. The
+`2026_08_26_v2000_*` files (A0-only, misdated) are superseded and left in place for Bobby.
+**Why:** Audit found the first ship A0-only (189 vs M1's 398 locations) and misdated. Ship-date
+naming is the convention.
+**Revisit if:** the blend rule or the rake reference window changes.
+
+## 2026-09-23: idd-* dependencies are git sources pinned to main (idd-figures added; idd-tools switched)
+**Decision:** `idd-figures[maps]`, `geopandas>=1.1`, `rasterio` added; `[tool.uv.sources]` declares
+`idd-figures` and `idd-tools` as `ssh://git@github.com/ihmeuw/<repo>.git`, `branch = "main"`
+(idd-tools switched from the editable path source; the repo CLAUDE.md still describes the path
+form and needs updating). Declared via `/consume-idd-repo`; uv.lock records the commits.
+**Why:** STANDARDS 2026-09-21: path sources propagate into every consumer's resolution and break
+it; git sources pinned to `main` are the fleet convention.
+**Revisit if:** a dependency is not on GitHub, or STANDARDS changes the form.
+
+## 2026-09-23: Figures for the shipped model come from the blended deliverable only
+**Decision:** Every figure of the final model (global, super-region, cumulative) is drawn from the
+shipped blend files, with the historical scenario predicted on the same blend by
+`run-blend-historical` using the shipped rake ratios. The A0 super-region draw file
+(`c1s1_sr_final_gpd_cens_q95_e7a78b19.parquet`) is not a figure source.
+**Why:** Bobby: "I want the blended version". The A0 file differs materially (unadjusted totals
+~50% lower; raked within a few %), and its raked draw MEANS (459/448/429k) had been quoted as the
+cumulative total where the medians are 282/274/266k.
+**Revisit if:** the deliverable's frame or blend rule changes.
+
+## 2026-09-23: Land-only stage-1 grids are the exposure product for storm figures
+**Decision:** Per-storm figures use the stored stage-1 intensity / exposure-hours grids as they
+are (CLIMADA coastal/land centroids only; no over-water swath). No CLIMADA recompute and no
+full-grid product is pursued.
+**Why:** Bobby: "I just want over land." Population-weighted panels only need land anyway.
+**Revisit if:** an over-water exposure figure is explicitly requested.
+
+## 2026-09-23: Figure code lives in the repo on idd-figures; outputs in the 05-figures node
+**Decision:** New figure code is a viz module + click CLI in this repo (`viz/storm_three_panel`,
+`viz/shipped_figures`, `viz/basin_map`, `predict/blend_historical`), tests alongside; outputs go to
+`/mnt/team/idd/pub/idd_tc_mortality/05-figures/working/<figure-set>/` (working slot). Map layouts
+are idd-figures `panel_grid` specs with explicit inch geometry (hand-built when `map_facet`'s
+vocabulary does not fit — e.g. its map-to-colorbar gap is tied to the title allowance). Time-series
+and box plots remain plain matplotlib on summarised frames, saved with idd-figures `save_figure`.
+**Why:** The 2026-08 figure scripts live only on the output node (`04-predict/*/_*.py`), which is
+not a durable record; idd-figures is the house standard and Bobby asked for it explicitly.
+**Revisit if:** idd-figures grows a line/box painter set worth adopting for the time series.
+
+## 2026-09-23: StagePlotter is cap-aware and accepts injected fits; censored tails plot their interior density
+**Decision:** `StagePlotter._predict` passes the physical cap for `needs_cap` families and adds the
+threshold for excess-outcome tails (mirrors `predict_component`); `register_results(model_row,
+{stage: FitResult})` injects refit results, since the final fits are never cached as pickles. The
+`cont_pdf_quintile` panel supports gpd / gpd_cens / log_logistic / log_logistic_cens, drawing the
+uncensored family's interior density (censoring at the per-storm cap is predict-only).
+**Why:** The shipped model's tail is gpd_cens; the panel raised for it and the default tail vet
+could not predict it.
+**Revisit if:** log_logistic_trunc or gamma tails need the density panel (truncation renormalises
+per row, so that is a separate branch).
