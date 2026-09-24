@@ -276,7 +276,7 @@ class DrawModel:
             )
         else:
             bulk_rate = _bulk_mean(self.bulk, eta_bulk)
-            tail_rate = _tail_mean(self.tail, eta_tail, self.threshold_rate)
+            tail_rate = _tail_mean(self.tail, eta_tail, self.threshold_rate, storm_df)
 
         # ---------- Assemble ----------
         if expected_bernoulli:
@@ -382,14 +382,59 @@ def _bulk_draw(
     )
 
 
-def _tail_mean(stage: StageDraw, eta: np.ndarray, threshold_rate: float) -> np.ndarray:
-    """Analytical mean rate from a tail stage."""
+def _tail_mean(
+    stage: StageDraw,
+    eta: np.ndarray,
+    threshold_rate: float,
+    storm_df: pd.DataFrame | None = None,
+) -> np.ndarray:
+    """Analytical mean rate from a tail stage.
+
+    storm_df is required only by cap-at-predict families (log_logistic_cens),
+    whose censored mean depends on the per-row physical cap H_i.
+    """
     if stage.family == "gamma":
         return np.exp(eta) + threshold_rate
     if stage.family == "log_logistic":
         # The fitted model's point prediction is the log-logistic median,
         # alpha = exp(eta). Matches distributions.log_logistic.predict.
         return np.exp(eta) + threshold_rate
+    if stage.family == "lognormal":
+        # Mean, not median: exp(eta + sigma^2/2) with sigma^2 = WLS scale.
+        # Matches distributions.lognormal.predict (incl. the overflow clip).
+        if stage.scale is None:
+            raise ValueError("lognormal tail requires scale (sigma^2) on the StageDraw.")
+        return np.exp(np.clip(eta + 0.5 * stage.scale, None, 700)) + threshold_rate
+    if stage.family == "log_logistic_cens":
+        # Censored mean E[min(W, H_i)] with per-row physical cap; matches
+        # distributions.log_logistic_cens.predict (H<=0 -> 0 excess).
+        from idd_tc_mortality.distributions.log_logistic_cens import loglogistic_censored_mean
+        from idd_tc_mortality.tail_cap import excess_cap
+        if storm_df is None:
+            raise ValueError("log_logistic_cens tail requires storm_df for the per-row cap.")
+        if stage.scale is None:
+            raise ValueError("log_logistic_cens tail requires scale (shape k) on the StageDraw.")
+        alpha = np.exp(eta)
+        H = excess_cap(storm_df, threshold_rate)
+        return loglogistic_censored_mean(alpha, float(stage.scale), np.asarray(H)) + threshold_rate
+    if stage.family == "gpd_cens":
+        # Censored mean E[min(W, H_i)], W ~ GPD(sigma=exp(eta), xi=stage.scale).
+        # Matches distributions.gpd_cens.predict exactly.
+        from idd_tc_mortality.distributions.gpd_cens import gpd_censored_mean
+        from idd_tc_mortality.tail_cap import excess_cap
+        if storm_df is None:
+            raise ValueError("gpd_cens tail requires storm_df for the per-row cap.")
+        H = excess_cap(storm_df, threshold_rate)
+        return gpd_censored_mean(np.exp(eta), float(stage.scale), np.asarray(H)) + threshold_rate
+    if stage.family == "log_logistic_trunc":
+        # Truncated mean E[W | W <= H_i], W ~ LogLogistic(alpha=exp(eta), k).
+        # Matches distributions.log_logistic_trunc.predict exactly.
+        from idd_tc_mortality.distributions.log_logistic_trunc import truncated_mean
+        from idd_tc_mortality.tail_cap import excess_cap
+        if storm_df is None:
+            raise ValueError("log_logistic_trunc tail requires storm_df for the per-row cap.")
+        H = excess_cap(storm_df, threshold_rate)
+        return truncated_mean(np.exp(eta), float(stage.scale), np.asarray(H)) + threshold_rate
     if stage.family == "gpd":
         # Point prediction is the GPD median sigma*(2^xi-1)/xi (ln(2) limit at
         # xi=0). Matches distributions.gpd.predict. xi = stage.scale.
@@ -432,6 +477,60 @@ def _tail_draw(
         u = np.clip(u, 1e-12, 1.0 - 1e-12)
         excess = alpha * (u / (1.0 - u)) ** (1.0 / k)
         return excess + threshold_rate
+    if stage.family == "lognormal":
+        # excess = exp(N(eta, sigma^2)), sigma^2 = stage.scale (WLS residual
+        # variance). Predictive spread deliberately ignores the per-storm weight
+        # so that E[draw] = exp(eta + sigma^2/2) matches _tail_mean and
+        # distributions.lognormal.predict exactly (unlike gamma, the lognormal
+        # MEAN depends on the variance, so a weighted predictive sigma would
+        # break o0/o1 mean consistency).
+        if stage.scale is None:
+            raise ValueError("lognormal tail requires scale (sigma^2) on the StageDraw.")
+        sigma = np.sqrt(stage.scale)
+        excess = np.exp(np.clip(rng.normal(loc=eta, scale=sigma), None, 700))
+        return excess + threshold_rate
+    if stage.family == "log_logistic_cens":
+        # Sample the latent W ~ LogLogistic(alpha=exp(eta), k=stage.scale) like
+        # the log_logistic branch, then apply the per-row physical cap:
+        # excess = min(W, H_i). E[excess] equals loglogistic_censored_mean,
+        # matching _tail_mean and distributions.log_logistic_cens.predict.
+        from idd_tc_mortality.tail_cap import excess_cap
+        if stage.scale is None:
+            raise ValueError("log_logistic_cens tail requires scale (shape k) on the StageDraw.")
+        alpha = np.exp(eta)
+        k = float(stage.scale)
+        u = rng.uniform(low=0.0, high=1.0, size=eta.shape)
+        u = np.clip(u, 1e-12, 1.0 - 1e-12)
+        w = alpha * (u / (1.0 - u)) ** (1.0 / k)
+        H = np.maximum(np.asarray(excess_cap(storm_df, threshold_rate), dtype=float), 0.0)
+        return np.minimum(w, H) + threshold_rate
+    if stage.family == "gpd_cens":
+        # Sample W ~ GPD(sigma=exp(eta), xi=stage.scale) via inverse CDF, then
+        # cap: excess = min(W, H_i). E[excess] = gpd_censored_mean (= _tail_mean).
+        from idd_tc_mortality.tail_cap import excess_cap
+        sigma = np.exp(eta)
+        xi = float(stage.scale)
+        u = np.clip(rng.uniform(size=eta.shape), 1e-12, 1.0 - 1e-12)
+        if abs(xi) < _XI_EPS:
+            w = -sigma * np.log(1.0 - u)
+        else:
+            w = (sigma / xi) * ((1.0 - u) ** (-xi) - 1.0)
+        H = np.maximum(np.asarray(excess_cap(storm_df, threshold_rate), dtype=float), 0.0)
+        return np.minimum(w, H) + threshold_rate
+    if stage.family == "log_logistic_trunc":
+        # Truncated sampling: draw u ~ U(0, F(H)) and invert the log-logistic CDF,
+        # so W | W <= H. E[draw] = truncated_mean (= _tail_mean). H <= 0 -> 0.
+        from idd_tc_mortality.tail_cap import excess_cap
+        alpha = np.exp(eta)
+        k = float(stage.scale)
+        H = np.maximum(np.asarray(excess_cap(storm_df, threshold_rate), dtype=float), 0.0)
+        with np.errstate(divide="ignore"):
+            FH = 1.0 / (1.0 + (np.where(H > 0, H, np.nan) / alpha) ** (-k))
+        u = np.clip(rng.uniform(size=eta.shape), 1e-12, 1.0 - 1e-12) * FH
+        u = np.clip(u, 1e-300, 1.0 - 1e-12)
+        w = alpha * (u / (1.0 - u)) ** (1.0 / k)
+        w = np.where(H > 0, np.minimum(w, H), 0.0)
+        return w + threshold_rate
     if stage.family == "gpd":
         # excess ~ GPD(sigma=exp(eta), xi=stage.scale). Inverse-CDF sampling:
         #   xi != 0:  y = (sigma/xi) * ((1-u)^(-xi) - 1)
@@ -610,8 +709,12 @@ def _prepare_stage(
     # log_logistic uses scipy BFGS, not statsmodels; cov_params is the BFGS
     # hess_inv covering (beta, log_k). Branch early so the rest of the function
     # can keep the statsmodels assumptions.
-    if family == "log_logistic":
+    if family in ("log_logistic", "log_logistic_cens", "log_logistic_trunc"):
+        # log_logistic_cens FITS with the plain log_logistic BFGS optimiser
+        # (censoring enters only at predict); log_logistic_trunc's truncated
+        # MLE optimises the same [beta, log_k] vector — one kit builder covers all.
         return _prepare_stage_log_logistic(
+            family=family,
             stage=stage,
             raw=raw,
             fit_result=fit_result,
@@ -631,8 +734,11 @@ def _prepare_stage(
     # gpd also uses scipy BFGS, not statsmodels. Its joint (beta, xi) inverse
     # Hessian lives in fit_result.meta['hess_inv'] (gpd.fit sets cov=None), so
     # branch here before the statsmodels-only cov_params extraction below.
-    if family == "gpd":
+    if family in ("gpd", "gpd_cens"):
+        # gpd_cens re-exports the identical untruncated gpd.fit (censoring is
+        # predict-only), so the gpd kit builder applies unchanged.
         return _prepare_stage_gpd(
+            family=family,
             stage=stage,
             fit_result=fit_result,
             exposure_mode=exposure_mode,
@@ -648,7 +754,8 @@ def _prepare_stage(
             seed=seed,
         )
 
-    has_dispersion = family in ("scaled_logit", "gamma")
+    # lognormal is WLS: raw.scale = sigma^2, needed by _tail_mean's mean formula.
+    has_dispersion = family in ("scaled_logit", "gamma", "lognormal")
     scale_mle: float | None
     df_resid: int | None
     try:
@@ -725,6 +832,7 @@ def _psd_project(cov: np.ndarray) -> np.ndarray:
 def _prepare_stage_log_logistic(
     *,
     stage: str,
+    family: str = "log_logistic",
     raw,
     fit_result,
     exposure_mode: str,
@@ -745,20 +853,24 @@ def _prepare_stage_log_logistic(
     raw.hess_inv is the (p+1)x(p+1) joint covariance over (beta, log_k).
     FitResult.params is just beta; shape_param k lives in meta['shape_param'].
     """
-    cov_full = np.asarray(raw.hess_inv)
     n_beta = len(params_mle)
-    if cov_full.shape != (n_beta + 1, n_beta + 1):
-        raise RuntimeError(
-            f"Stage {stage!r} (log_logistic): expected hess_inv shape "
-            f"{(n_beta + 1, n_beta + 1)}, got {cov_full.shape}."
-        )
-    # BFGS hess_inv can drift slightly asymmetric / non-PSD over iterations
-    # (the update preserves symmetry only in exact arithmetic). Symmetrize and
-    # project to PSD before using as a covariance, so multivariate_normal
-    # doesn't emit RuntimeWarnings and the draws are valid.
-    cov_full = _psd_project(cov_full)
     shape_param = float(fit_result.meta["shape_param"])
     log_k_mle = float(np.log(shape_param))
+    cov_full = None
+    if draw_coefs or draw_scale:
+        # Lazy: the deterministic (c0_s0) path never touches the covariance, so
+        # a fit whose optimiser lacks a usable hess_inv can still mean-predict.
+        cov_full = np.asarray(raw.hess_inv)
+        if cov_full.shape != (n_beta + 1, n_beta + 1):
+            raise RuntimeError(
+                f"Stage {stage!r} ({family}): expected hess_inv shape "
+                f"{(n_beta + 1, n_beta + 1)}, got {cov_full.shape}."
+            )
+        # BFGS hess_inv can drift slightly asymmetric / non-PSD over iterations
+        # (the update preserves symmetry only in exact arithmetic). Symmetrize and
+        # project to PSD before using as a covariance, so multivariate_normal
+        # doesn't emit RuntimeWarnings and the draws are valid.
+        cov_full = _psd_project(cov_full)
 
     train_weight_mean = _compute_train_weight_mean(
         stage=stage, exposure_mode=exposure_mode, spec=spec, data=data,
@@ -796,7 +908,7 @@ def _prepare_stage_log_logistic(
 
     return {
         "stage":             stage,
-        "family":            "log_logistic",
+        "family":            family,
         "exposure_mode":     exposure_mode,
         "covariate_combo":   covariate_combo,
         "param_names":       param_names,
@@ -811,6 +923,7 @@ def _prepare_stage_log_logistic(
 def _prepare_stage_gpd(
     *,
     stage: str,
+    family: str = "gpd",
     fit_result,
     exposure_mode: str,
     covariate_combo: dict,
@@ -877,7 +990,7 @@ def _prepare_stage_gpd(
 
     return {
         "stage":             stage,
-        "family":            "gpd",
+        "family":            family,
         "exposure_mode":     exposure_mode,
         "covariate_combo":   covariate_combo,
         "param_names":       param_names,
