@@ -1,5 +1,5 @@
 # Project status
-Updated: 2026-09-23 16:59
+Updated: 2026-10-26
 
 ## Goals
 Double-hurdle TC mortality pipeline: fit/evaluate/select death models on IBTrACS storm data,
@@ -47,12 +47,66 @@ median −17k (IQR −32k..−12k). The "458/448/429k" in older notes are the ra
 super-region file (means ≫ medians: right-skewed draws). The blend raises unadjusted totals
 ~50% vs A0 (the model is nonlinear in exposure); the rake anchors raked totals back within a few %.
 
+*Comparability numbers (2026-10-26 v2 report: CLIMADA v3 frames, ensemble-of-4 mean pipeline,
+start 1985 unless said).* Levels 1985–2025: all-storm global model/observed 0.98; land-hitting
+1.75 (landfall fraction 0.79 vs 0.44, confirmed by IBTrACS dist2land 0.45); Cat 5 over land 3.7×
+(31% of model Cat 5 storms are Cat 5 over land vs 5% observed; v2 frames had 60%); basins land
+NA 0.92, NI 0.98, AU 1.34, WP 1.41, SI 2.11, EP/SP not comparable. Global land total ρ raw/det:
+1-yr 0.15/0.14, 5-yr 0.15/0.18, 10-yr 0.12/0.42 — all inside the phase-randomized chance bands
+(±0.28, ±0.57, ±0.77); run-vs-run ceilings 0.20/0.31/0.43 (obs-vs-run medians −0.04/−0.13/−0.22).
+Start 1970 shows the mid-1970s step (10-yr det 0.59, p 0.14); starts 1990/2000 give 1-yr raw
+0.34/0.36 (p 0.02/0.03), the only global land cells outside the band. All-storm global 5-yr raw
+0.58 (p 0.14). Basins land 10-yr raw/det: WP 0.52*/0.82*, SI 0.55/0.81*, NA 0.33/−0.54, AU
+−0.52/−0.16, NI −0.67/−0.22 (* outside band). Country cells outside the band 1–3% (the null).
+Mortality global adjusted 5-yr: obs~CMIP6 0.43 (p 0.05)/−0.33 det; obs~IBTrACS-pred 0.38/0.53;
+IBTrACS-pred~CMIP6 0.43/−0.01; levels CMIP6/obs 0.82, IBTrACS-pred/obs 0.38, CMIP6/IBTrACS-pred
+2.12 (unadjusted CMIP6/obs 2.97). Kept at 1985: 7 basins, 5 SR, 11 regions, 54 countries (53
+mortality); at 2000: 6 basins, 42 (40).
+
 *Uncertainty story (2026-08-06).* Fit (c1_s1) UI dwarfs climate UI ×25; outcome draws matter at
 global scale; the draw-mean sits ~45% above the point forecast (Jensen), so rake ratios are
 cell-consistent (c1s1). The three scenario-SDI files are near-identical (Δ≤0.003 by 2100):
 scenario spread is storm-frame-driven; the upstream question is open.
 
+*CMIP6 vs IBTrACS comparability report (2026-10-26, v2 published the same day).* Interactive artifact
+(https://claude.ai/artifact/1gYmPqc3sTud3A6V76wru4, private, Version 4) answering whether big
+IBTrACS years/periods line up with big CMIP6 (tc-risk / CLIMADA) periods; spec in
+`.claude/cmip6_ibtracs_comparison_prompt.md` (v2: start years 1970/80/85/90/2000, no blocks, chance
+band from 1,000 phase-randomized surrogates, run-vs-run ceiling, Bretherton n_eff), working notes in
+`.claude/cmip6_ibtracs_comparison_notes.md`. Code: `viz/cmip6_ibtracs_comparison/` (CLI
+`run-cmip6-ibtracs-comparison aggregate|predict|stats|export|sanity`, 49 tests). Outputs in
+`05-figures/working/cmip6_ibtracs_comparison/` (counts, mortality/, stats/ incl. ceiling.parquet,
+artifact/ 95 files 119 MB); publish mirror `~/.claude/artifacts/idd-tc-mortality/cmip6_ibtracs_comparison/`
+(publish in ≤64 MB parts). Model frames are the CLIMADA stage4b_v3 consolidated admin0/admin1
+(2026-10-26 / 10-18). The model series are the RAW tc-risk/CLIMADA counts: `tracks_per_year` is
+Bobby's calibration (TempestExtremes detections per GCM → IBTrACS-scaled per basin → BayesPoisson
+change-point bins → integer per bin, `idd-climate-models tc_risk_functions.get_tracks_per_year`),
+constant within a bin by design; no seeds-based renormalisation (decided 2026-10-26). Data facts in
+the Methods tab: TempestExtremes has no 1965–69 detections for 7/8 runs (floored to 1 → the
+1965–74 bin ~40% low: the mid-1970s step); four NA bins with zero detections carry a placeholder
+7 storms/yr; the calibration's IBTrACS basin split (NA 7.8, EP 21.5 /yr) differs from IBTrACS in
+the tc-risk boxes (NA 18.5, EP 13.2); the IBTrACS CLIMADA land run has no EP basin and thin 1970s
+WP/NI; CLIMADA `storm_id` is unique only within a basin. Upstream list for rapidresponse: notes
+§"Upstream issues". Correction logged: I had called the raw counts "not frequency estimates".
+
+*v3-frames deliverable, STAGED (2026-10-26).* `04-predict/20261026_shipped_v3/_ship_gpd_cens_blend_v3.py`
+(sed-copy of the August ship; same model e7a78b19, same blend/rake path) wrote
+`2026_10_26_v2000_{adjusted_mean,unadjusted}_direct_deaths.{parquet,nc}` + `_model.json` into
+`.../direct_risk_staging/` — NOT copied to rapidresponse `direct_risk/`. Forced input change: the
+ssp126/ssp585 SDI files s160v1/s161v1 were deleted upstream; s160v7/s161v7 (finalized 2026-10-19)
+used, max |Δ| vs ssp245 ≤ 0.03 by 2100 (a v8 pair appeared the same day). QC vs 2026_08_20
+(`qc_v3_vs_0820.log`): 385 locations (the 13 inland units gone), global ssp245 adjusted
+7233/5714/3758 vs 7249/5765/3809, rake ratios within 0.99–1.16 (high-income 1.16), Caribbean
+unadjusted +40–47%, UK/Ireland/Canada −23–38%. Slurm: 8 min, 8.7 GB (16G ask).
+
 ## Recent steps
+- 2026-10-26 (pm): frequency investigation (notes §16:28); v3 CLIMADA frames found; deliverable
+  recreated on v3 and staged (not shipped); comparability report v2 rebuilt on v3 + spec v2 and
+  republished to the same URL (Versions 2–4). Slurm: climada recount 44 s / 3.0 GB; predict ×8
+  ~2 min / 1 GB, IBTrACS 31 s; stats 30 min / 3.4 GB (storm-only 20 min / 2.5 GB); export 100 s.
+- 2026-10-26 (am): CMIP6 vs IBTrACS comparability pipeline + artifact v1 built and published. Slurm:
+  aggregates 15–30 s; 8 mortality runs ~2 min / 1 GB each; stats 7 min / 1.5 GB. One bug fixed
+  mid-way (int8 Categorical codes × 100 overflowed and scrambled runs; regression test added).
 - 2026-09-23: idd-figures[maps], geopandas, rasterio added (git sources pinned to main;
   idd-tools path→git realised in the venv). Built storm_three_panel (+ notebook), StagePlotter
   gpd_cens support + final-model vetting notebook (by-basin S1/S2, stage-4 density),
@@ -65,6 +119,11 @@ scenario spread is storm-frame-driven; the upstream question is open.
 - 2026-08-04: final selection protocol converged; trio wired, forecast, figured.
 
 ## Next steps
+0. Bobby decides: (a) copy the staged `2026_10_26_v2000_*` deliverable to rapidresponse
+   `direct_risk/` (and confirm SDI s160v7/s161v7 vs the newer v8 pair); (b) commit the comparability
+   module/tests (49 tests) + pyproject entry; (c) raise the six upstream items in the notes with
+   rapidresponse (EP missing / thin 1970s in the IBTrACS CLIMADA land run; TE 1965–69 gap; NA
+   placeholder bins; calibration basin split; bin-constant tracks_per_year for awareness).
 1. Bobby: decide the parked dirt — `select/model_selection.py`,
    `notebooks/20260714_v2000_sensitivity/decompose.ipynb`,
    `notebooks/20260722/heavy_tail_simple_and_real.ipynb` (all modified, provenance unknown),
