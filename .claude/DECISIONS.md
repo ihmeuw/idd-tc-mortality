@@ -760,3 +760,47 @@ uncensored family's interior density (censoring at the per-storm cap is predict-
 could not predict it.
 **Revisit if:** log_logistic_trunc or gamma tails need the density panel (truncation renormalises
 per row, so that is a separate branch).
+
+## 2026-10-27: Raw tc-risk/CLIMADA counts are the comparability model series; no seeds renormalisation
+**Decision:** (decided 2026-10-26) The per-(run, scenario, bin, basin) `tracks_per_year` counts are
+the model series in the CMIP6 vs IBTrACS report, as produced; no reweighting by seeds (Lin
+survival-rate frequency) or any other frequency. Raw counts stay on every tab, not just sanity.
+**Why:** `tracks_per_year` is Bobby's deliberate calibration (TempestExtremes detections per GCM →
+IBTrACS-scaled per basin → BayesPoisson change-point bins → integer per bin,
+`idd-climate-models tc_risk_functions.get_tracks_per_year`). Bobby: "I am setting the number of
+seeds based on things ... why would you change that?"
+**Revisit if:** the upstream calibration changes, or Bobby asks for a seeds sensitivity
+(`seeds_per_month` is in every track file).
+
+## 2026-10-27: Report v2 statistics — start years, chance band, ceiling, Bretherton n_eff; blocks dropped
+**Decision:** (Bobby's spec v2, 2026-10-26) Every statistic is computed per start year
+(1970/1980/1985/1990/2000, default 1985; mortality 1985/1990/2000), on 1/5/10-yr (mortality
+5/10/15-yr) moving averages only. Significance comes from 1,000 phase-randomized surrogates of the
+observed series (percentile, two-sided p, 95% band); the attainable ρ is the run-vs-run ceiling
+(28 run pairs at the same window); n_eff follows Bretherton et al. 1999. Non-overlapping block
+means are gone.
+**Why:** blocks gave 4–11 points per series and no calibrated reference; the surrogate band and the
+ceiling answer "is this more than chance" and "how much could a run agree at all" directly.
+**Revisit if:** an AR(1) or block-bootstrap null is preferred, or other start years are needed.
+
+## 2026-10-27: v3-frames re-ship is staged, not copied to direct_risk; SDI s160v7/s161v7 substituted
+**Decision:** The shipped model (gpd_cens e7a78b19, A1/A0 blend, rake recomputed on the blend) was
+rerun unchanged on the CLIMADA stage4b_v3 admin0/admin1 consolidated frames with
+`04-predict/20261026_shipped_v3/_ship_gpd_cens_blend_v3.py`; outputs sit in
+`.../direct_risk_staging/2026_10_26_v2000_*` until Bobby copies them. The ssp126/ssp585 SDI inputs
+are `future_sdi_s160v7`/`s161v7` (finalized 2026-10-19) because the August ship's v1 files were
+deleted upstream; max |Δ| vs the ssp245 file ≤ 0.03 by 2100. A v8 pair appeared 2026-10-26, unevaluated.
+**Why:** writing into rapidresponse `direct_risk/` is outward-facing; the SDI change was forced and
+Bobby has not confirmed it.
+**Revisit if:** Bobby confirms (copy the file pairs + model.json) or prefers v8 (rerun: 8 min,
+8.7 GB measured; 16G ask).
+
+## 2026-10-27: Cluster paths in new code come from committed constants; .claude notes use placeholders
+**Decision:** `viz/cmip6_ibtracs_comparison/constants.py` derives `TS` from
+`predict.blend_historical.DR` and reuses `ROOT`, `HIER_PATH`, `SHIP_MODEL_JSON` rather than adding
+cluster-path literals; `.claude/cmip6_ibtracs_comparison_{prompt,notes}.md` write `${TS}` and
+`${ROOT}`.
+**Why:** the repo is PUBLIC (`gh repo view`, 2026-10-27) and CLAUDE.md forbids committing absolute
+paths; there is no paths.yaml yet. The pre-existing literals in `predict/paths.py`,
+`predict/blend_historical.py`, DECISIONS.md and settings.json are parked tech debt (STATUS parking lot).
+**Revisit if:** the two-tier paths.yaml migration lands — then `TS` and the predict constants move there.

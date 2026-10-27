@@ -131,3 +131,28 @@ and its raked draw means had been misread as medians. Replaced by `run-blend-his
 markdown cell in this repo or rra-flooding mentions ERA5. Search notebook SOURCE cells (json) instead
 of raw files. (ERA5 lives in climate-data: reference climatology 2019–2023; and as 2016–2021 forcing
 for the tc_risk downscaler.)
+
+## 2026-10-27: Seeds-based frequency weight as the model series
+**What I tried:** After finding `tracks_per_year` constant within change-point bins, proposed
+`w = F / tracks_per_year` with F from `seeds_per_month` (Lin survival-rate frequency) as the primary
+model series for the comparability report, with raw counts demoted to the sanity tab.
+**Why I stopped:** Bobby (2026-10-26 16:43): the bin counts are his TempestExtremes calibration, set
+deliberately. Raw counts stay primary.
+**Refs:** `.claude/cmip6_ibtracs_comparison_notes.md` §16:28; DECISIONS 2026-10-27 (raw counts);
+corrections log 2026-10-26.
+
+## 2026-10-27: Non-overlapping block windows for the low-frequency comparison
+**What I tried:** v1 of the report compared 5- and 10-yr non-overlapping block means next to
+moving averages.
+**Why I stopped:** 4–11 points per block series, no calibrated reference; spec v2 replaced them with
+the surrogate chance band and the run-vs-run ceiling on moving averages. `window_spec` now raises
+on anything but "ma".
+**Refs:** `.claude/cmip6_ibtracs_comparison_prompt.md` v2 §2.
+
+## 2026-10-27: Rerunning the August ship script unchanged on the v3 frames
+**What I tried:** sed-copied `04-predict/20260806_shipped/_ship_gpd_cens_blend.py` with only frame
+paths and output names changed and submitted it (job 64082497).
+**Why I stopped:** `FileNotFoundError` on `forecasting .../future/sdi/future_sdi_s160v1/sdi.nc` —
+the ssp126/585 SDI v1 files were deleted upstream. Reran with s160v7/s161v7 (job 64092623, rc=0).
+Hard-coded forecasting SDI paths can vanish between runs: check them before any ship rerun.
+**Refs:** `04-predict/20261026_shipped_v3/ship_blend_v3.log`; DECISIONS 2026-10-27 (re-ship staged).

@@ -1,5 +1,5 @@
 # Project status
-Updated: 2026-10-26
+Updated: 2026-10-27
 
 ## Goals
 Double-hurdle TC mortality pipeline: fit/evaluate/select death models on IBTrACS storm data,
@@ -9,8 +9,10 @@ S2 (P(rate>=threshold | S1=1)), bulk rate, tail rate. Stages: validate → grid 
 select → uncertainty → predict → figures.
 
 ## Orientation
-Selection is COMPLETE and the deliverable is SHIPPED; the active work is FIGURE TOOLING for
-the shipped model, built on idd-figures.
+Selection is COMPLETE and the 2026-08-20 deliverable is SHIPPED. Active work: the CMIP6 vs
+IBTrACS comparability report (v2 published, code committed 2026-10-27) and the re-ship of the
+same model on the CLIMADA stage4b_v3 frames (STAGED on the node, awaiting Bobby's go). The
+figure tooling (2026-09-23) is in place and unchanged.
 
 *The shipped model.* The 20260722 v2000 honest-mean cycle's selection (protocol: DECISIONS
 2026-08-04) produced a trio of q=0.95 intercept-tail models — gamma 7e4c6c32, gpd_cens
@@ -88,6 +90,9 @@ the Methods tab: TempestExtremes has no 1965–69 detections for 7/8 runs (floor
 the tc-risk boxes (NA 18.5, EP 13.2); the IBTrACS CLIMADA land run has no EP basin and thin 1970s
 WP/NI; CLIMADA `storm_id` is unique only within a basin. Upstream list for rapidresponse: notes
 §"Upstream issues". Correction logged: I had called the raw counts "not frequency estimates".
+Committed 2026-10-27 as 86f546a. Paths: the module derives `TS` from
+`predict.blend_historical.DR` (no new cluster-path literal); the spec and notes use `${TS}` /
+`${ROOT}` placeholders because the repo is PUBLIC (`gh repo view`, 2026-10-27).
 
 *v3-frames deliverable, STAGED (2026-10-26).* `04-predict/20261026_shipped_v3/_ship_gpd_cens_blend_v3.py`
 (sed-copy of the August ship; same model e7a78b19, same blend/rake path) wrote
@@ -100,6 +105,9 @@ used, max |Δ| vs ssp245 ≤ 0.03 by 2100 (a v8 pair appeared the same day). QC 
 unadjusted +40–47%, UK/Ireland/Canada −23–38%. Slurm: 8 min, 8.7 GB (16G ask).
 
 ## Recent steps
+- 2026-10-27 (am): ruff-cleaned the comparability module (18 cosmetic findings), routed its one
+  absolute path through `DR`, scrubbed cluster paths from the two notes files; committed 86f546a
+  (module + tests + pyproject) and 4f9624c (tracking); pushed, origin up to date.
 - 2026-10-26 (pm): frequency investigation (notes §16:28); v3 CLIMADA frames found; deliverable
   recreated on v3 and staged (not shipped); comparability report v2 rebuilt on v3 + spec v2 and
   republished to the same URL (Versions 2–4). Slurm: climada recount 44 s / 3.0 GB; predict ×8
@@ -120,10 +128,10 @@ unadjusted +40–47%, UK/Ireland/Canada −23–38%. Slurm: 8 min, 8.7 GB (16G a
 
 ## Next steps
 0. Bobby decides: (a) copy the staged `2026_10_26_v2000_*` deliverable to rapidresponse
-   `direct_risk/` (and confirm SDI s160v7/s161v7 vs the newer v8 pair); (b) commit the comparability
-   module/tests (49 tests) + pyproject entry; (c) raise the six upstream items in the notes with
-   rapidresponse (EP missing / thin 1970s in the IBTrACS CLIMADA land run; TE 1965–69 gap; NA
-   placeholder bins; calibration basin split; bin-constant tracks_per_year for awareness).
+   `direct_risk/` (and confirm SDI s160v7/s161v7 vs the newer v8 pair); (b) raise the six upstream
+   items in the notes with rapidresponse (EP missing / thin 1970s in the IBTrACS CLIMADA land run;
+   TE 1965–69 gap; NA placeholder bins; calibration basin split; bin-constant tracks_per_year for
+   awareness).
 1. Bobby: decide the parked dirt — `select/model_selection.py`,
    `notebooks/20260714_v2000_sensitivity/decompose.ipynb`,
    `notebooks/20260722/heavy_tail_simple_and_real.ipynb` (all modified, provenance unknown),
@@ -144,7 +152,9 @@ unadjusted +40–47%, UK/Ireland/Canada −23–38%. Slurm: 8 min, 8.7 GB (16G a
 - decompose.ipynb prerequisite: sensitivity runs do not exist for the final models.
 - Old figure sets in `20260804_meanfwd/figures` (picks_*, pick_*, global_*) — Bobby may clear.
 - Feed fleet-measured per-tier costs into packing; consolidate `SUPER_REGIONS`; absolute-path
-  tech debt (two-tier paths.yaml before any public release); delete dead fit stage; fix stale
+  tech debt: the repo is already PUBLIC (gh, 2026-10-27) and `predict/paths.py`,
+  `predict/blend_historical.py`, DECISIONS.md and settings.json carry cluster paths — the two-tier
+  paths.yaml migration is overdue; delete dead fit stage; fix stale
   `test_run_component.py`; basin random effects; draw-count sufficiency; tighten
   `fit/orchestrate.py` `_SLURM_RESOURCES`.
 - stage_plots.py carries 24 pre-existing ruff hits (all `Optional[...]`/import-order style).
