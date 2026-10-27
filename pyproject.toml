@@ -66,6 +66,7 @@ run-shipped-figures = "idd_tc_mortality.viz.shipped_figures:main"
 run-basin-map = "idd_tc_mortality.viz.basin_map:main"
 run-predict-consolidated = "idd_tc_mortality.predict.orchestrate_consolidated:main"
 run-finalize-deliverable = "idd_tc_mortality.predict.finalize_deliverable:main"
+run-cmip6-ibtracs-comparison = "idd_tc_mortality.viz.cmip6_ibtracs_comparison.cli:main"
 
 [dependency-groups]
 dev = [

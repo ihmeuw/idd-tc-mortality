@@ -1,0 +1,614 @@
+<meta charset="utf-8">
+<title>CMIP6–IBTrACS Comparability</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one sticky control row scoping every tab; dense instrument-panel grids below, no cards except the chart surface. */
+:root {
+  --bg: #f4f6f6; --surface: #fcfcfb; --ink: #141718; --ink-2: #4f5557; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --hover: rgba(11,11,11,0.05);
+  --model: #2a78d6; --ibt: #eb6834; --gcm1: #1baf7a; --gcm2: #e87ba4; --gcm3: #6250d6; --gcm4: #008300;
+  --pos: #2a78d6; --neg: #e34948; --mid: #f0efec; --accent: #2a78d6; --warn: #ec835a; --chance: #898781; --ceil: #b08a00;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101314; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.06);
+    --model: #3987e5; --ibt: #d95926; --gcm1: #199e70; --gcm2: #d55181; --gcm3: #9085e9; --gcm4: #008300;
+    --pos: #3987e5; --neg: #e66767; --mid: #383835; --accent: #3987e5; --warn: #ec835a; --chance: #a09e97; --ceil: #d4a800; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101314; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.06);
+  --model: #3987e5; --ibt: #d95926; --gcm1: #199e70; --gcm2: #d55181; --gcm3: #9085e9; --gcm4: #008300;
+  --pos: #3987e5; --neg: #e66767; --mid: #383835; --accent: #3987e5; --warn: #ec835a; --chance: #a09e97; --ceil: #d4a800; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.45; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 40px; max-width: 1400px; margin: 0 auto; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding-block: 18px 8px; }
+header.top h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+header.top .sub { color: var(--ink-2); font-size: 13px; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--grid); }
+nav.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ink-2); font: inherit; font-weight: 500; padding: 8px 12px; cursor: pointer; margin-bottom: -1px; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav.tabs button:focus-visible, select:focus-visible, button:focus-visible, th:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; flex-wrap: wrap; gap: 8px 14px; padding-block: 10px; border-bottom: 1px solid var(--grid); }
+.ctl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ctl label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.ctl select, .ctl .seg { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; max-width: 260px; }
+.ctl.start select { border-color: var(--accent); }
+.seg { display: inline-flex; padding: 0 !important; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; background: none; border: 0; color: var(--ink-2); padding: 4px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+main { padding-top: 14px; }
+section[role="tabpanel"] { display: grid; gap: 18px; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; }
+h3 { font-size: 13px; font-weight: 600; margin: 0; color: var(--ink-2); }
+p { max-width: 68ch; margin: 0; }
+.note { color: var(--ink-2); font-size: 13px; max-width: 80ch; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+.num, td.n, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.stats-row { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.stat { display: flex; flex-direction: column; gap: 1px; }
+.stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stat .v { font-family: var(--mono); font-size: 16px; }
+.stat .v small { font-size: 11px; color: var(--muted); }
+/* heatmaps */
+.hm-block { display: grid; gap: 10px; }
+.hm-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.hm { display: grid; gap: 2px; font-size: 12px; }
+.hm .hdr { font-size: 11px; color: var(--muted); text-align: center; padding: 2px; align-self: end; line-height: 1.2; }
+.hm .rl { font-size: 11px; color: var(--ink-2); padding-right: 6px; white-space: nowrap; align-self: center; }
+.hm .cell { font-family: var(--mono); font-size: 11.5px; text-align: center; padding: 5px 2px; border-radius: 2px; cursor: default; min-width: 0; border: 1.5px solid transparent; }
+.hm .cell.na { color: var(--muted); background: var(--surface); border: 1px dashed var(--grid); }
+.hm .cell.sig { border-color: var(--ink); }
+.hm-title { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.legend-bar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-2); flex-wrap: wrap; }
+.legend-bar .bar { width: 160px; height: 10px; border-radius: 2px; border: 1px solid var(--border); }
+.legend-bar .sigbox { display: inline-block; width: 14px; height: 12px; border: 1.5px solid var(--ink); border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+/* charts */
+.chart { position: relative; width: 100%; min-height: 240px; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); min-width: 120px; z-index: 3; }
+.tip .r { display: flex; justify-content: space-between; gap: 12px; }
+.tip .r b { font-family: var(--mono); font-weight: 500; }
+.tip .r span::before { content: ""; display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 5px; background: currentColor; }
+.key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--ink-2); }
+.key span::before { content: ""; display: inline-block; width: 16px; height: 2px; vertical-align: middle; margin-right: 6px; background: currentColor; }
+.key span.band::before { height: 10px; opacity: 0.35; }
+.axis text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+.axis line, .axis path { stroke: var(--axis); }
+.gridline { stroke: var(--grid); }
+/* rho strip (chance band + ceiling) */
+.strip { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; font-size: 12px; }
+.strip .lab { color: var(--ink-2); white-space: nowrap; }
+.strip svg { display: block; width: 100%; height: 26px; }
+/* tables */
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
+th.sortable { cursor: pointer; }
+th.sorted { color: var(--ink); }
+td.n { text-align: right; }
+th.n { text-align: right; }
+tr:hover td { background: var(--hover); }
+.cellbar { display: inline-block; height: 8px; vertical-align: middle; border-radius: 1px; margin-left: 6px; }
+td.sig { font-weight: 600; }
+/* maps */
+.map-row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.map svg { width: 100%; height: auto; display: block; }
+.map path.unit { stroke: var(--surface); stroke-width: 0.5; cursor: default; }
+.map path.unit.dropped { fill: var(--grid); }
+.map path.unit:hover { stroke: var(--ink); stroke-width: 1; }
+.map path.graticule { fill: none; stroke: var(--grid); stroke-width: 0.5; }
+.map path.sphere { fill: none; stroke: var(--axis); stroke-width: 0.6; }
+.map path.backdrop { fill: var(--grid); stroke: none; opacity: 0.6; }
+/* methods */
+.methods { display: grid; gap: 22px; max-width: 900px; }
+.methods h2 { margin-top: 4px; }
+.methods ul { margin: 0; padding-left: 20px; max-width: 80ch; }
+.methods li { margin-bottom: 4px; }
+.methods table { width: auto; }
+code { font-family: var(--mono); font-size: 12px; background: var(--hover); padding: 1px 4px; border-radius: 3px; }
+.loading { color: var(--muted); font-size: 13px; }
+.err { color: var(--warn); }
+@media (prefers-reduced-motion: no-preference) { nav.tabs button, .seg button { transition: color 120ms, background 120ms; } }
+@media (max-width: 700px) { header.top h1 { font-size: 18px; } .hm .cell { font-size: 10px; padding: 4px 1px; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>CMIP6–IBTrACS comparability</h1>
+    <span class="sub">Do “big” IBTrACS years and periods line up with big CMIP6 (tc-risk / CLIMADA) periods? Rank agreement, raw and detrended, from a chosen start year to 2025 (storms) or 2023 (deaths), with chance bands and a run-vs-run ceiling.</span>
+  </header>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="overview">Overview</button>
+    <button role="tab" data-tab="series">Time series</button>
+    <button role="tab" data-tab="maps">Maps</button>
+    <button role="tab" data-tab="scorecard">Scorecard</button>
+    <button role="tab" data-tab="mortality">Mortality</button>
+    <button role="tab" data-tab="methods">Methods &amp; caveats</button>
+  </nav>
+  <div class="controls" id="controls">
+    <div class="ctl start" data-for="overview series maps scorecard mortality"><label for="c-start">Start year</label><select id="c-start"></select></div>
+    <div class="ctl" data-for="overview series maps scorecard"><label for="c-source">Storm set</label><select id="c-source"></select></div>
+    <div class="ctl" data-for="mortality"><label for="c-tag">Deaths</label><select id="c-tag"><option value="adjusted">Adjusted (raked)</option><option value="unadjusted">Unadjusted</option></select></div>
+    <div class="ctl" data-for="overview series maps scorecard mortality"><label for="c-level">Level</label><select id="c-level"></select></div>
+    <div class="ctl" data-for="overview series mortality"><label for="c-geo">Location</label><select id="c-geo"></select></div>
+    <div class="ctl" data-for="series maps scorecard"><label for="c-outcome">Outcome</label><select id="c-outcome"></select></div>
+    <div class="ctl" data-for="overview series maps scorecard mortality"><label for="c-series">Model series</label><select id="c-series"></select></div>
+    <div class="ctl" data-for="overview series maps scorecard mortality"><label for="c-stat">Draw statistic</label><select id="c-stat"><option value="mean">Mean pipeline</option><option value="median">Median pipeline</option></select></div>
+    <div class="ctl" data-for="series maps scorecard mortality"><label for="c-window">Window</label><select id="c-window"></select></div>
+    <div class="ctl" data-for="series maps scorecard mortality"><label>Trend</label><div class="seg" id="c-detrend"><button type="button" data-v="r" aria-pressed="true">Raw</button><button type="button" data-v="d" aria-pressed="false">Detrended</button></div></div>
+    <div class="ctl" data-for="maps"><label for="c-metric">Map metric</label><select id="c-metric"></select></div>
+    <div class="ctl" data-for="mortality"><label for="c-pair">Reference for the map/table</label><select id="c-pair"><option value="obs_vs_model">Observed vs CMIP6</option><option value="obs_vs_ibt">Observed vs IBTrACS-predicted</option><option value="ibt_vs_model">IBTrACS-predicted vs CMIP6</option></select></div>
+  </div>
+  <main>
+    <section role="tabpanel" id="tab-overview">
+      <div><h2>Global headline by start year</h2>
+        <p class="note">Spearman ρ between the observed and the selected model series for global total storm counts, for every start year the analysis can begin at. Columns pair each window with raw and detrended. An outlined cell lies outside the 95% chance band (phase-randomized surrogates of the observed series); hover for the band and the run-vs-run ceiling.</p></div>
+      <div id="ov-start" class="loading">Loading…</div>
+      <div><h2>Spearman rank correlation, observed vs model, by level × outcome × window</h2>
+        <p class="note">Each block is one geography level for the selected start year. Cells are the median across the kept places at that level (the Global block is the single global series). Choose a location to see one place instead. Rows pair each window with the mean and median draw pipelines; raw on the left, linearly detrended on the right. Blue = positive rank agreement, red = negative. Hover a cell for Kendall τ, hit rate, the number of places outside their chance band and the run-vs-run ceiling.</p></div>
+      <div id="ov-body" class="loading">Loading…</div>
+    </section>
+    <section role="tabpanel" id="tab-series" hidden>
+      <div><h2 id="ts-title">Time series</h2><p class="note" id="ts-note"></p></div>
+      <div class="panel"><div class="key" id="ts-key"></div><div class="chart" id="ts-chart"></div></div>
+      <div class="panel"><h3>Where ρ sits: chance band and run-vs-run ceiling</h3><div class="strip" id="ts-strip"></div></div>
+      <div class="panel"><h3>Observed value’s percentile within the 800 run × draw values, per period</h3><div class="chart" id="ts-pct" style="min-height:120px"></div></div>
+      <div class="panel"><h3>Match measures for this selection</h3><div class="stats-row" id="ts-stats"></div></div>
+    </section>
+    <section role="tabpanel" id="tab-maps" hidden>
+      <div><h2 id="map-title">Map</h2><p class="note">Countries, regions and super-regions use the GBD shapes; the basin view draws the tc-risk basin boxes. Places with fewer than 10 observed land-hitting storms from the start year are shown in grey and excluded from every statistic.</p></div>
+      <div class="panel map-row"><div class="legend-bar" id="map-legend"></div><div class="map" id="map"></div></div>
+    </section>
+    <section role="tabpanel" id="tab-scorecard" hidden>
+      <div><h2 id="sc-title">Scorecard</h2><p class="note">All kept places at the selected level for the selected outcome, model series, statistic, window and start year. Click a column header to sort. ρ is given raw and detrended side by side; the remaining measures follow the Trend toggle. The chance band is the 2.5–97.5% range of ρ against phase-randomized surrogates of the observed series (bold ρ = outside it); the ceiling is the median (min–max) run-vs-run ρ at the same window; n<sub>eff</sub> is the Bretherton et al. (1999) effective sample size.</p></div>
+      <div class="panel tbl-wrap" id="sc-table"></div>
+    </section>
+    <section role="tabpanel" id="tab-mortality" hidden>
+      <div><h2 id="mo-title">Deaths, three ways</h2><p class="note">Observed deaths (v1985 file, 1985–2023) against the shipped gpd_cens e7a78b19 model predicted on the IBTrACS storm record (band = the 100 fit draws: mortality-model uncertainty alone) and on the CMIP6 storm record (band = 800 run × draw values: hazard uncertainty with fit draws averaged out). Years before 2000 are out of sample for the v2000 fit (shaded). The rake is one ratio per super-region, so within a super-region the rank measures are identical for adjusted and unadjusted deaths.</p></div>
+      <div class="panel"><div class="key" id="mo-key"></div><div class="chart" id="mo-chart"></div></div>
+      <div class="panel tbl-wrap"><h3>Match measures, all three pairs</h3><div id="mo-stats"></div></div>
+    </section>
+    <section role="tabpanel" id="tab-methods" hidden><div class="methods" id="methods"></div></section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); } for (const k of kids) e.append(k); return e; };
+const fmt = (v, d = 2) => (v == null || Number.isNaN(v)) ? '—' : (+v).toFixed(d);
+const fmtN = (v) => (v == null) ? '—' : (+v >= 1000 ? d3.format(',.0f')(v) : (+v >= 10 ? d3.format('.1f')(v) : d3.format('.2f')(v)));
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// ---------- transforms (mirror stats.py: centred moving averages, linear detrend) ----------
+const T = {
+  detrend(y) { const n = y.length, c = (n - 1) / 2; let sy = 0, sxy = 0, sxx = 0; for (let i = 0; i < n; i++) { const t = i - c; sy += y[i]; sxy += y[i] * t; sxx += t * t; } const m = sy / n, b = sxx ? sxy / sxx : 0; return y.map((v, i) => v - m - b * (i - c)); },
+  ma(y, w) { if (w === 1) return y.slice(); const out = []; for (let i = 0; i + w <= y.length; i++) { let s = 0; for (let j = i; j < i + w; j++) s += y[j]; out.push(s / w); } return out; },
+  width(win) { return +win.slice(2); },
+  window(y, win) { return T.ma(y, T.width(win)); },
+  centers(years, win) { const w = T.width(win); const out = []; for (let i = 0; i + w <= years.length; i++) out.push(years[i] + (w - 1) / 2); return out; },
+  apply(y, win, det) { return T.window(det ? T.detrend(y) : y, win); },
+  from(years, start) { let i = 0; while (i < years.length && years[i] < start) i++; return i; },
+};
+
+// ---------- state & data ----------
+const S = { tab: 'overview', start: 1985, source: 'land', tag: 'adjusted', level: 'global', geo: '1', outcome: 'total', series: 'ens', stat: 'mean', window: 'ma5', det: false, metric: 'spearman', pair: 'obs_vs_model' };
+let META = null;
+const cache = new Map();
+async function loadJSON(rel) { if (!cache.has(rel)) cache.set(rel, fetch(rel).then(r => { if (!r.ok) throw new Error(`${rel}: ${r.status}`); return r.json(); }).then(d => { if (d && d.stat_keys) d._kidx = new Map(d.stat_keys.map((k, i) => [k, i])); return d; })); return cache.get(rel); }
+const domainOf = (tab) => tab === 'mortality' ? 'mortality' : 'storm';
+const srcOf = (tab) => tab === 'mortality' ? S.tag : S.source;
+const cellFile = (tab, level, outcome) => `data/${domainOf(tab)}/${srcOf(tab)}/${level}/${domainOf(tab) === 'mortality' ? 'deaths' : outcome}.json`;
+const windowsFor = (tab) => tab === 'mortality' ? META.mortality_windows : META.storm_windows;
+const startsFor = (tab) => tab === 'mortality' ? META.mortality_starts : META.storm_starts;
+const levelsFor = (tab) => (domainOf(tab) === 'storm' && S.source === 'all') ? ['global', 'basin'] : META.levels.map(l => l[0]);
+const geoRows = (tab, level) => META.geos.filter(g => g.domain === domainOf(tab) && g.level === level && g.start_year === S.start);
+const keptGeos = (tab, level) => geoRows(tab, level).filter(g => g.kept);
+const seriesLabel = (sid) => sid === 'ens' ? 'Ensemble (4 GCMs)' : sid === 'pooled' ? 'Pooled (8 runs)' : sid === 'ibt' ? 'IBTrACS-predicted' : sid.startsWith('gcm:') ? `GCM ${sid.slice(4)}` : `Run ${sid.slice(4).replace('_r', ' r').replace('i1p1f1', '')}`;
+const windowLabel = (w) => META.window_labels[w] || w;
+const outcomeLabel = (o) => (Object.fromEntries(META.outcomes))[o] || o;
+const levelLabel = (l) => (Object.fromEntries(META.levels))[l] || l;
+const endYear = (tab) => domainOf(tab) === 'mortality' ? META.mortality_years[1] : META.storm_years[1];
+const METRICS = [['spearman', 'Spearman ρ'], ['kendall', 'Kendall τ'], ['hit_rate', 'Top-tercile hit rate'], ['updown', 'Up/down agreement'], ['sur_pct', 'Percentile of ρ in the chance band'], ['ratio', 'Model / observed ratio (raw)'], ['pct_mean', 'Mean observed percentile'], ['pct_out90', 'Share of periods outside 5–95%'], ['n_obs', 'Observed land-hitting storms']];
+const GCM_COLORS = { 'CMCC-ESM2': '--gcm1', 'EC-Earth3': '--gcm2', 'MPI-ESM1-2-HR': '--gcm3', 'MRI-ESM2-0': '--gcm4' };
+const skey = (pair, series, stat, win, det, start) => `${pair}|${series}|${stat}|${win}|${det ? 'd' : 'r'}|${start}`;
+const bkey = (band, win, det, start) => `${band}|${win}|${det ? 'd' : 'r'}|${det ? start : META.raw_band_start}`;
+const ckey = (win, det, start, stat) => `${win}|${det ? 'd' : 'r'}|${start}|${stat}`;
+const mIdx = (name) => META.metrics.indexOf(name);
+const cIdx = (name) => META.ceil_cols.indexOf(name);
+const GEO_FLAGS = { basin: { EP: 'The IBTrACS CLIMADA land run holds EP storm files in only 2 of 56 years, so observed land-hitting EP counts are near zero; the land-level EP comparison is not meaningful (all-storm EP is unaffected).', NI: 'The IBTrACS CLIMADA land run has no NI storm files in the 1970s and 9 in the 1980s; observed NI land-hitting counts before 1990 are incomplete.', WP: 'The IBTrACS CLIMADA land run has 47 WP storm files in the 1970s against 175–190 per later decade; observed WP land-hitting counts in the 1970s are incomplete.' } };
+const geoFlag = (level, geo) => (GEO_FLAGS[level] || {})[geo] || null;
+const STEP_NOTE = 'tc-risk track counts are set per time bin (TempestExtremes detections on each GCM, scaled to IBTrACS, segmented by change-points): constant within a bin, and about 40% low in 1965–1974 for 7 of 8 runs because TempestExtremes has no detections for 1965–1969 there. The observed land-hitting record is also thin before 1975. Both series step up in the mid-1970s for unrelated reasons, and a linear detrend does not remove a step; a start year of 1980 or later avoids it.';
+const getStat = (data, geoObj, key, name) => { if (!geoObj || !geoObj.stats || !data._kidx) return null; const i = data._kidx.get(key); if (i == null) return null; const a = geoObj.stats[i]; return a ? a[mIdx(name)] : null; };
+const getCeil = (geoObj, key, name) => { const a = geoObj && geoObj.ceiling && geoObj.ceiling[key]; return a ? a[cIdx(name)] : null; };
+const sliceBand = (band, start) => { if (!band) return null; const idx = band.start.map((s, i) => s >= start ? i : -1).filter(i => i >= 0); const pick = (a) => idx.map(i => a[i]); return { start: pick(band.start), end: pick(band.end), q: band.q.map(pick), obs: pick(band.obs), pct: pick(band.pct) }; };
+
+// ---------- controls ----------
+function fill(select, opts, value) { select.replaceChildren(...opts.map(([v, l]) => el('option', { value: v, text: l }))); if (opts.some(o => String(o[0]) === String(value))) select.value = String(value); return select.value; }
+function syncControls() {
+  const tab = S.tab;
+  document.querySelectorAll('#controls .ctl').forEach(c => { c.hidden = !c.dataset.for.split(' ').includes(tab); });
+  const starts = startsFor(tab); if (!starts.includes(S.start)) S.start = starts.includes(META.default_start) ? META.default_start : starts[0];
+  fill($('c-start'), starts.map(y => [y, `${y}–${endYear(tab)}`]), S.start);
+  fill($('c-source'), META.sources, S.source);
+  $('c-tag').value = S.tag;
+  const levels = levelsFor(tab); S.level = fill($('c-level'), levels.map(l => [l, levelLabel(l)]), S.level);
+  const geos = keptGeos(tab, S.level);
+  const geoOpts = (tab === 'overview' && S.level !== 'global') ? [['__median__', 'All kept places (median)'], ...geos.map(g => [g.geo, g.name])] : geos.map(g => [g.geo, g.name]);
+  S.geo = fill($('c-geo'), geoOpts, S.geo);
+  fill($('c-outcome'), META.outcomes, S.outcome);
+  const ser = [['ens', 'Ensemble (4 GCMs)'], ['pooled', 'Pooled (8 runs)'], ...META.gcms.map(g => [`gcm:${g}`, `GCM ${g}`]), ...META.runs.map(r => [`run:${r}`, seriesLabel(`run:${r}`)])];
+  fill($('c-series'), ser, S.series);
+  $('c-stat').value = S.stat;
+  const wins = windowsFor(tab); S.window = fill($('c-window'), wins.map(w => [w, windowLabel(w)]), wins.includes(S.window) ? S.window : 'ma5');
+  $('c-detrend').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'd') === S.det)));
+  fill($('c-metric'), METRICS, S.metric);
+  $('c-pair').value = S.pair;
+}
+function bind() {
+  $('c-start').addEventListener('change', e => { S.start = +e.target.value; if (!keptGeos(S.tab, S.level).some(g => g.geo === S.geo) && S.geo !== '__median__') { const g = keptGeos(S.tab, S.level); S.geo = g[0] ? g[0].geo : '1'; } render(); });
+  $('c-source').addEventListener('change', e => { S.source = e.target.value; if (!levelsFor(S.tab).includes(S.level)) { S.level = 'global'; S.geo = '1'; } render(); });
+  $('c-tag').addEventListener('change', e => { S.tag = e.target.value; render(); });
+  $('c-level').addEventListener('change', e => { S.level = e.target.value; const g = keptGeos(S.tab, S.level); S.geo = (S.tab === 'overview' && S.level !== 'global') ? '__median__' : (g[0] ? g[0].geo : '1'); render(); });
+  $('c-geo').addEventListener('change', e => { S.geo = e.target.value; render(); });
+  $('c-outcome').addEventListener('change', e => { S.outcome = e.target.value; render(); });
+  $('c-series').addEventListener('change', e => { S.series = e.target.value; render(); });
+  $('c-stat').addEventListener('change', e => { S.stat = e.target.value; render(); });
+  $('c-window').addEventListener('change', e => { S.window = e.target.value; render(); });
+  $('c-detrend').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.det = b.dataset.v === 'd'; render(); });
+  $('c-metric').addEventListener('change', e => { S.metric = e.target.value; render(); });
+  $('c-pair').addEventListener('change', e => { S.pair = e.target.value; render(); });
+  $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (!b) return; setTab(b.dataset.tab); });
+  const mq = window.matchMedia('(prefers-color-scheme: dark)'); mq.addEventListener('change', () => render());
+  new MutationObserver(() => render()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+function setTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  document.querySelectorAll('section[role="tabpanel"]').forEach(s => { s.hidden = s.id !== `tab-${tab}`; });
+  const starts = startsFor(tab); if (!starts.includes(S.start)) S.start = starts.includes(META.default_start) ? META.default_start : starts[0];
+  if (tab === 'maps' && S.level === 'global') { S.level = 'country'; const g = keptGeos(tab, 'country'); S.geo = g[0] ? g[0].geo : '1'; }
+  if (tab !== 'overview' && S.geo === '__median__') { const g = keptGeos(tab, S.level); S.geo = g[0] ? g[0].geo : '1'; }
+  if (tab === 'overview' && S.level !== 'global' && !S.geo) S.geo = '__median__';
+  if (!levelsFor(tab).includes(S.level)) { S.level = 'global'; S.geo = '1'; }
+  if (tab !== 'overview' && S.geo !== '__median__' && !keptGeos(tab, S.level).some(g => g.geo === S.geo)) { const g = keptGeos(tab, S.level); S.geo = g[0] ? g[0].geo : '1'; }
+  try { history.replaceState(null, '', `#${tab}`); } catch (e) { /* ignore */ }
+  render();
+}
+let renderToken = 0;
+async function render() {
+  const token = ++renderToken;
+  syncControls();
+  try {
+    if (S.tab === 'overview') await renderOverview(token);
+    else if (S.tab === 'series') await renderSeries(token);
+    else if (S.tab === 'maps') await renderMap(token);
+    else if (S.tab === 'scorecard') await renderScorecard(token);
+    else if (S.tab === 'mortality') await renderMortality(token);
+    else if (S.tab === 'methods') renderMethods();
+  } catch (err) { console.error(err); const host = $(`tab-${S.tab}`); host.append(el('p', { class: 'err', text: `Could not load data: ${err.message}` })); }
+}
+
+// ---------- colour scales ----------
+function divergingScale(domain) { const [lo, mid, hi] = domain; const neg = css('--neg'), m = css('--mid'), pos = css('--pos'); return (v) => v == null || Number.isNaN(v) ? null : (v < mid ? d3.interpolateLab(m, neg)(Math.min(1, (mid - v) / (mid - lo))) : d3.interpolateLab(m, pos)(Math.min(1, (v - mid) / (hi - mid)))); }
+function metricScale(metric, values) {
+  if (metric === 'spearman' || metric === 'kendall') return { f: divergingScale([-1, 0, 1]), ticks: ['−1', '0', '+1'], fmt: (v) => fmt(v, 2) };
+  if (metric === 'hit_rate' || metric === 'updown') return { f: divergingScale([0, 0.5, 1]), ticks: ['0', '0.5', '1'], fmt: (v) => fmt(v, 2) };
+  if (metric === 'pct_mean') return { f: divergingScale([0, 0.5, 1]), ticks: ['0 (model high)', '0.5', '1 (model low)'], fmt: (v) => fmt(v, 2) };
+  if (metric === 'sur_pct') return { f: divergingScale([0, 0.5, 1]), ticks: ['0 (below band)', '0.5', '1 (above band)'], fmt: (v) => fmt(v, 2) };
+  if (metric === 'pct_out90') { const s = d3.scaleSequential([0, 1], d3.interpolateLab(css('--mid'), css('--neg'))); return { f: (v) => v == null ? null : s(v), ticks: ['0', '0.5', '1'], fmt: (v) => fmt(v, 2) }; }
+  if (metric === 'ratio') { const f = divergingScale([-2, 0, 2]); return { f: (v) => v == null || v <= 0 ? null : f(Math.log2(v)), ticks: ['×¼', '×1', '×4'], fmt: (v) => v == null ? '—' : `×${fmt(v, 2)}` }; }
+  const mx = d3.max(values.filter(v => v != null)) || 1; const s = d3.scaleSequential([0, mx], d3.interpolateLab(css('--mid'), css('--pos'))); return { f: (v) => v == null ? null : s(v), ticks: ['0', fmt(mx / 2, 0), fmt(mx, 0)], fmt: (v) => fmt(v, 0) };
+}
+function legendBar(host, scale, label, sig) { host.replaceChildren(); const bar = el('div', { class: 'bar' }); const stops = d3.range(0, 1.0001, 0.1).map(t => scale.f(scale.dom ? scale.dom(t) : t)); host.append(el('span', { text: label }), el('span', { text: scale.ticks[0] }), bar, el('span', { text: scale.ticks[2] })); bar.style.background = `linear-gradient(90deg, ${stops.join(',')})`; if (sig) host.append(el('span', {}, el('span', { class: 'sigbox' }), document.createTextNode('outside 95% chance band'))); }
+const sigOf = (lo, hi, v) => v != null && lo != null && hi != null && (v < lo || v > hi);
+
+// ---------- overview ----------
+function heatCell(v, tip, sig) { const c = el('div', { class: 'cell' + (v == null ? ' na' : '') + (sig ? ' sig' : ''), text: v == null ? '—' : fmt(v), title: tip }); if (v != null) { const scale = divergingScale([-1, 0, 1]); c.style.background = scale(v); c.style.color = Math.abs(v) > 0.55 ? '#fff' : css('--ink'); } return c; }
+async function renderStartPanel(token) {
+  const host = $('ov-start'); host.className = 'loading'; host.textContent = 'Loading…';
+  const data = await loadJSON(`data/storm/${S.source}/global/total.json`); if (token !== renderToken) return;
+  const g = data.geos['1'];
+  host.className = 'panel hm-block'; host.replaceChildren();
+  const head = el('div', { class: 'hm-title' }, el('h3', { text: `Global · ${S.source === 'all' ? 'all storms' : 'land-hitting storms'} · total ≥ 18 m/s · ${seriesLabel(S.series)} (${S.stat})` }));
+  const lg = el('div', { class: 'legend-bar' }); legendBar(lg, { f: (t) => divergingScale([-1, 0, 1])(t * 2 - 1), ticks: ['−1', '0', '+1'] }, 'ρ', true); head.append(lg); host.append(head);
+  const wins = META.storm_windows;
+  const hm = el('div', { class: 'hm' }); hm.style.gridTemplateColumns = `auto repeat(${wins.length * 2}, minmax(0, 1fr))`;
+  hm.append(el('div', { class: 'hdr', text: 'START' }));
+  for (const w of wins) for (const d of ['r', 'd']) hm.append(el('div', { class: 'hdr', text: `${windowLabel(w)} · ${d === 'r' ? 'raw' : 'detr.'}` }));
+  for (const start of META.storm_starts) {
+    hm.append(el('div', { class: 'rl', text: `${start}–${META.storm_years[1]} (${start === S.start ? 'selected' : ''})`.replace(' ()', '') }));
+    for (const w of wins) for (const d of ['r', 'd']) {
+      const det = d === 'd'; const k = skey('obs_vs_model', S.series, S.stat, w, det, start); const ck = ckey(w, det, start, S.stat);
+      const v = getStat(data, g, k, 'spearman'), lo = getStat(data, g, k, 'sur_lo'), hi = getStat(data, g, k, 'sur_hi'), p = getStat(data, g, k, 'sur_p'), ne = getStat(data, g, k, 'n_eff'), n = getStat(data, g, k, 'n');
+      const cm = getCeil(g, ck, 'ceil_med'), cmin = getCeil(g, ck, 'ceil_min'), cmax = getCeil(g, ck, 'ceil_max');
+      const tip = `${start}–${META.storm_years[1]}, ${windowLabel(w)}, ${det ? 'detrended' : 'raw'}\nρ = ${fmt(v)} (n ${fmt(n, 0)}, n_eff ${fmt(ne, 1)})\nchance band 95%: ${fmt(lo)} to ${fmt(hi)}; two-sided p = ${fmt(p, 3)}\nrun-vs-run ceiling: median ${fmt(cm)} (${fmt(cmin)} to ${fmt(cmax)})`;
+      hm.append(heatCell(v, tip, sigOf(lo, hi, v)));
+    }
+  }
+  host.append(hm);
+}
+async function renderOverview(token) {
+  await renderStartPanel(token); if (token !== renderToken) return;
+  const host = $('ov-body'); host.className = 'loading'; host.textContent = 'Loading…';
+  const ov = await loadJSON(`data/overview/${S.start}.json`);
+  const cols = Object.fromEntries(ov.columns.map((c, i) => [c, i]));
+  const domain = 'storm', src = S.source;
+  const rows = ov.rows.filter(r => r[cols.domain] === domain && r[cols.source] === src && r[cols.pair] === 'obs_vs_model' && r[cols.series] === S.series);
+  const idx = new Map(rows.map(r => [`${r[cols.level]}|${r[cols.outcome]}|${r[cols.stat]}|${r[cols.window]}|${r[cols.detrended]}`, r]));
+  let placeSp = null, placeName = null;
+  let spKeys = null;
+  if (S.geo !== '__median__' && S.level !== 'global') { const sp = await loadJSON(`data/${domain}/${src}/${S.level}/spearman.json`); spKeys = new Map(sp.keys.map((k, i) => [k, i])); placeSp = sp.geos[S.geo]; placeName = (keptGeos('overview', S.level).find(g => g.geo === S.geo) || {}).name; }
+  if (token !== renderToken) return;
+  host.className = ''; host.replaceChildren();
+  const levels = levelsFor('overview');
+  const outcomes = META.outcomes.map(o => o[0]);
+  const scale = divergingScale([-1, 0, 1]);
+  const blocks = [];
+  if (placeSp) blocks.push({ title: `${placeName} (${levelLabel(S.level)}), ${S.start}–${META.storm_years[1]}`, place: placeSp });
+  for (const lv of levels) blocks.push({ title: (lv === 'global' ? 'Global' : `${levelLabel(lv)} — median across kept places`) + `, ${S.start}–${META.storm_years[1]}`, level: lv });
+  for (const b of blocks) {
+    const block = el('div', { class: 'hm-block panel' });
+    const head = el('div', { class: 'hm-title' }, el('h3', { text: b.title }));
+    const lg = el('div', { class: 'legend-bar' }); legendBar(lg, { f: (t) => scale(t * 2 - 1), ticks: ['−1', '0', '+1'] }, 'ρ'); head.append(lg); block.append(head);
+    const pair = el('div', { class: 'hm-pair' });
+    for (const det of ['r', 'd']) {
+      const hm = el('div', { class: 'hm' }); hm.style.gridTemplateColumns = `auto repeat(${outcomes.length}, minmax(0, 1fr))`;
+      hm.append(el('div', { class: 'hdr', text: det === 'r' ? 'RAW' : 'DETRENDED' }));
+      for (const o of outcomes) hm.append(el('div', { class: 'hdr', text: outcomeLabel(o).replace('Total storms (≥18 m/s)', 'Total') }));
+      for (const w of META.storm_windows) for (const st of ['mean', 'median']) {
+        hm.append(el('div', { class: 'rl', text: `${windowLabel(w)} · ${st}` }));
+        for (const o of outcomes) {
+          let v = null, tip = '';
+          if (b.place) { const ki = spKeys.get(`obs_vs_model|${S.series}|${st}|${w}|${det}|${S.start}`); const vv = (b.place[o] && ki != null) ? b.place[o][ki] : null; v = vv == null ? null : vv; tip = `${outcomeLabel(o)}, ${windowLabel(w)}, ${st}: ρ = ${fmt(v)}`; }
+          else { const r = idx.get(`${b.level}|${o}|${st}|${w}|${det}`); if (r) { v = r[cols.spearman]; tip = `${outcomeLabel(o)}, ${windowLabel(w)}, ${st}\nρ median ${fmt(v)} over ${r[cols.n_geos]} place(s); τ ${fmt(r[cols.kendall])}; hit rate ${fmt(r[cols.hit_rate])}; up/down ${fmt(r[cols.updown])}\n${r[cols.n_sig]} of ${r[cols.n_geos]} outside the 95% chance band; run-vs-run ceiling median ${fmt(r[cols.ceil_med])}`; } }
+          hm.append(heatCell(v, tip, false));
+        }
+      }
+      pair.append(hm);
+    }
+    block.append(pair); host.append(block);
+  }
+  if (S.source === 'all') host.append(el('p', { class: 'note', text: 'All-storm counts exist at the global and basin levels only (tc-risk lifetime max wind; IBTrACS track max).' }));
+  if (S.start < 1980) host.append(el('p', { class: 'note', text: `Read the detrended columns with the mid-1970s step in mind: ${STEP_NOTE}` }));
+  host.append(el('p', { class: 'note', text: 'Basin medians include EP, whose observed land-hitting record is essentially empty (Methods).' }));
+}
+
+// ---------- line chart ----------
+function lineChart(host, cfg) {
+  host.replaceChildren();
+  const W = Math.max(320, host.clientWidth || 800), H = cfg.height || 320, m = { t: 12, r: 16, b: 34, l: 54 };
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', cfg.label || 'chart');
+  const x = d3.scaleLinear().domain(cfg.xDomain).range([m.l, W - m.r]);
+  const allY = [].concat(...cfg.series.map(s => s.values), ...cfg.bands.map(b => b.lo.concat(b.hi)), cfg.yZero ? [0] : []).filter(v => v != null && Number.isFinite(v));
+  let [y0, y1] = d3.extent(allY); if (y0 == null) { y0 = 0; y1 = 1; } if (y0 === y1) { y0 -= 1; y1 += 1; } const pad = (y1 - y0) * 0.06; y0 -= pad; y1 += pad; if (cfg.yZero && y0 > 0) y0 = 0;
+  const y = d3.scaleLinear().domain([y0, y1]).range([H - m.b, m.t]).nice();
+  if (cfg.shade) { svg.append('rect').attr('x', x(cfg.shade[0])).attr('y', m.t).attr('width', Math.max(0, x(cfg.shade[1]) - x(cfg.shade[0]))).attr('height', H - m.b - m.t).attr('fill', css('--grid')).attr('opacity', 0.45); svg.append('text').attr('x', x(cfg.shade[0]) + 4).attr('y', m.t + 12).attr('fill', css('--muted')).attr('font-size', 11).attr('font-family', css('--mono')).text(cfg.shadeLabel || ''); }
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r))).call(g => g.selectAll('.tick line').attr('class', 'gridline')).call(g => g.select('.domain').remove());
+  svg.append('g').attr('class', 'axis').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(8).tickFormat(d3.format('d')).tickSize(4));
+  svg.append('text').attr('transform', 'rotate(-90)').attr('x', -(H / 2)).attr('y', 14).attr('text-anchor', 'middle').attr('fill', css('--muted')).attr('font-size', 11).text(cfg.yLabel || '');
+  if (y0 < 0 && y1 > 0) svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', css('--axis'));
+  for (const b of cfg.bands) { const area = d3.area().x((d, i) => x(b.x[i])).y0((d, i) => y(b.lo[i])).y1((d, i) => y(b.hi[i])).defined((d, i) => b.lo[i] != null && b.hi[i] != null); svg.append('path').datum(b.x).attr('d', area).attr('fill', b.color).attr('opacity', b.opacity); }
+  for (const s of cfg.series) { const line = d3.line().x((d, i) => x(s.x[i])).y((d) => y(d)).defined(d => d != null && Number.isFinite(d)); svg.append('path').datum(s.values).attr('d', line).attr('fill', 'none').attr('stroke', s.color).attr('stroke-width', s.width || 2).attr('stroke-dasharray', s.dash || null); if (s.dots) svg.append('g').selectAll('circle').data(s.values).join('circle').attr('cx', (d, i) => x(s.x[i])).attr('cy', d => y(d)).attr('r', 2.6).attr('fill', s.color); }
+  const cross = svg.append('line').attr('stroke', css('--ink')).attr('stroke-width', 1).attr('opacity', 0).attr('y1', m.t).attr('y2', H - m.b);
+  const tip = el('div', { class: 'tip' }); tip.hidden = true; host.append(svg.node(), tip);
+  const xs = cfg.series[0] ? cfg.series[0].x : (cfg.bands[0] ? cfg.bands[0].x : []);
+  const move = (ev) => { const [px] = d3.pointer(ev, svg.node()); const xv = x.invert(px); let bi = 0, bd = Infinity; xs.forEach((v, i) => { const d = Math.abs(v - xv); if (d < bd) { bd = d; bi = i; } }); if (!xs.length) return; cross.attr('x1', x(xs[bi])).attr('x2', x(xs[bi])).attr('opacity', 0.6); tip.replaceChildren(el('div', { class: 'mono', text: cfg.xLabel ? cfg.xLabel(xs[bi], bi) : String(xs[bi]) })); for (const s of cfg.series) { const i = s.x.indexOf(xs[bi]); if (i < 0) continue; const r = el('div', { class: 'r' }); const nm = el('span', { text: s.name }); nm.style.color = s.color; r.append(el('b', { text: fmtN(s.values[i]) }), nm); tip.append(r); } for (const b of cfg.bands) { const i = b.x.indexOf(xs[bi]); if (i < 0 || !b.name) continue; const r = el('div', { class: 'r' }); const nm = el('span', { text: b.name }); nm.style.color = b.color; r.append(el('b', { text: `${fmtN(b.lo[i])}–${fmtN(b.hi[i])}` }), nm); tip.append(r); } if (cfg.extra) { const e = cfg.extra(bi); if (e) tip.append(el('div', { class: 'r' }, el('b', { text: e[1] }), el('span', { text: e[0] }))); } tip.hidden = false; const rect = host.getBoundingClientRect(); const lx = (px / W) * rect.width; tip.style.left = `${Math.min(rect.width - 200, Math.max(0, lx + 12))}px`; tip.style.top = `${8}px`; };
+  svg.on('pointermove', move).on('pointerleave', () => { tip.hidden = true; cross.attr('opacity', 0); });
+  return svg;
+}
+function keyRow(host, items) { host.replaceChildren(...items.map(([name, color, band]) => { const s = el('span', { class: band ? 'band' : '', text: name }); s.style.color = color; return s; })); }
+
+// ---------- ρ strip: real ρ against the chance band and the run-vs-run ceiling ----------
+function rhoStrip(host, rows) {
+  host.replaceChildren();
+  const W = 520, H = 26;
+  for (const r of rows) {
+    host.append(el('div', { class: 'lab', text: r.label }));
+    const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', r.label);
+    const x = d3.scaleLinear().domain([-1, 1]).range([8, W - 8]);
+    svg.append('line').attr('x1', x(-1)).attr('x2', x(1)).attr('y1', H / 2).attr('y2', H / 2).attr('stroke', css('--axis'));
+    for (const t of [-1, -0.5, 0, 0.5, 1]) { svg.append('line').attr('x1', x(t)).attr('x2', x(t)).attr('y1', H / 2 - 4).attr('y2', H / 2 + 4).attr('stroke', css('--axis')); svg.append('text').attr('x', x(t)).attr('y', H - 1).attr('text-anchor', 'middle').attr('fill', css('--muted')).attr('font-size', 8).attr('font-family', css('--mono')).text(t === 0 ? '0' : (t > 0 ? '+' : '') + t); }
+    if (r.band && r.band[0] != null) svg.append('rect').attr('x', x(r.band[0])).attr('y', 4).attr('width', Math.max(1, x(r.band[1]) - x(r.band[0]))).attr('height', 9).attr('fill', css('--chance')).attr('opacity', 0.45).append('title').text(`chance band 2.5–97.5%: ${fmt(r.band[0])} to ${fmt(r.band[1])}`);
+    if (r.ceil && r.ceil[0] != null) { svg.append('rect').attr('x', x(r.ceil[0])).attr('y', 14).attr('width', Math.max(1, x(r.ceil[2]) - x(r.ceil[0]))).attr('height', 9).attr('fill', css('--ceil')).attr('opacity', 0.45).append('title').text(`run-vs-run ρ: ${fmt(r.ceil[0])} to ${fmt(r.ceil[2])}, median ${fmt(r.ceil[1])}`); svg.append('line').attr('x1', x(r.ceil[1])).attr('x2', x(r.ceil[1])).attr('y1', 14).attr('y2', 23).attr('stroke', css('--ceil')).attr('stroke-width', 2); }
+    if (r.value != null) svg.append('circle').attr('cx', x(r.value)).attr('cy', H / 2 - 4.5).attr('r', 4.5).attr('fill', r.color || css('--ink')).attr('stroke', css('--surface')).attr('stroke-width', 1.5).append('title').text(`ρ = ${fmt(r.value)}`);
+    host.append(svg.node());
+  }
+  host.append(el('div', { class: 'lab', text: '' }), el('div', { class: 'key' }, (() => { const a = el('span', { class: 'band', text: '95% chance band (phase-randomized surrogates)' }); a.style.color = css('--chance'); return a; })(), (() => { const b = el('span', { class: 'band', text: 'run-vs-run ρ, min–max with median' }); b.style.color = css('--ceil'); return b; })(), (() => { const c = el('span', { text: '● ρ of this selection' }); c.style.color = css('--ink'); return c; })()));
+}
+
+// ---------- time series ----------
+async function renderSeries(token) {
+  const file = cellFile('series', S.level, S.outcome);
+  $('ts-chart').replaceChildren(el('div', { class: 'loading', text: 'Loading…' }));
+  const data = await loadJSON(file); if (token !== renderToken) return;
+  const g = data.geos[S.geo]; if (!g) { $('ts-chart').replaceChildren(el('p', { class: 'note', text: 'No data for this place at this start year.' })); $('ts-strip').replaceChildren(); $('ts-pct').replaceChildren(); $('ts-stats').replaceChildren(); return; }
+  const i0 = T.from(data.years, S.start), years = data.years.slice(i0), win = S.window, det = S.det;
+  const xc = T.centers(years, win);
+  const band = det ? g.band[bkey('model', win, true, S.start)] : sliceBand(g.band[bkey('model', win, false)], S.start);
+  const ser = g.series[S.series][S.stat].slice(i0);
+  const obsW = T.apply(g.obs.slice(i0), win, det);
+  const modW = T.apply(ser, win, det);
+  const modelColor = css('--model'), ink = css('--ink');
+  const series = [{ name: `IBTrACS (${S.source === 'all' ? 'track max wind' : 'CLIMADA land-hitting'})`, x: xc, values: obsW, color: ink, width: 2, dots: true },
+                  { name: seriesLabel(S.series) + ` · ${S.stat}`, x: xc, values: modW, color: modelColor, width: 2.2 }];
+  if (S.series === 'ens' || S.series === 'pooled') for (const gcm of META.gcms) series.push({ name: `GCM ${gcm}`, x: xc, values: T.apply(g.series[`gcm:${gcm}`][S.stat].slice(i0), win, det), color: css(GCM_COLORS[gcm]), width: 1, dash: '3 3' });
+  const bands = (band && band.q[0].length === xc.length) ? [{ name: '5–95% of 800 run × draw', x: xc, lo: band.q[0], hi: band.q[4], color: modelColor, opacity: 0.16 }, { name: '25–75%', x: xc, lo: band.q[1], hi: band.q[3], color: modelColor, opacity: 0.22 }] : [];
+  $('ts-title').textContent = `${g.name}: ${outcomeLabel(S.outcome)} — ${S.start}–${META.storm_years[1]}, ${windowLabel(win)}, ${det ? 'detrended' : 'raw'}`;
+  const flag = geoFlag(S.level, S.geo); $('ts-note').textContent = (flag ? `Caution: ${flag} ` : '') + `${S.source === 'all' ? 'All storms (tc-risk tracks vs IBTrACS usa_wind / wmo_wind)' : 'Land-hitting storms (CLIMADA max wind over exposed admin0 units)'}. Lines: observed and the ${seriesLabel(S.series)} series under the ${S.stat} pipeline${(S.series === 'ens' || S.series === 'pooled') ? '; dashed lines are the four GCMs' : ''}. Bands: the 800 run × draw annual series windowed the same way${det ? ', each detrended from the start year' : ''}.`;
+  keyRow($('ts-key'), [[series[0].name, ink], [series[1].name, modelColor], ...(bands.length ? [['5–95% / 25–75% of 800 draws', modelColor, true]] : []), ...series.slice(2).map(s => [s.name, s.color])]);
+  lineChart($('ts-chart'), { xDomain: [years[0], years[years.length - 1]], series, bands, yLabel: det ? 'storms per year (detrended)' : 'storms per year', yZero: !det, xLabel: (v, i) => band ? `${band.start[i]}–${band.end[i]}` : String(v), extra: (i) => band ? ['observed percentile', fmt(band.pct[i], 2)] : null });
+  if (band && band.pct.length === xc.length) { lineChart($('ts-pct'), { height: 130, xDomain: [years[0], years[years.length - 1]], series: [{ name: 'percentile', x: xc, values: band.pct, color: ink, width: 1.2, dots: true }], bands: [{ x: xc, lo: xc.map(() => 0.05), hi: xc.map(() => 0.95), color: modelColor, opacity: 0.12, name: 'central 90%' }], yLabel: 'percentile', xLabel: (v, i) => `${band.start[i]}–${band.end[i]}` }); } else $('ts-pct').replaceChildren();
+  const key = skey('obs_vs_model', S.series, S.stat, win, det, S.start), raw = skey('obs_vs_model', S.series, S.stat, win, false, S.start), dd = skey('obs_vs_model', S.series, S.stat, win, true, S.start);
+  const st = (k, n) => getStat(data, g, k, n);
+  const strip = [false, true].map(d => { const k = d ? dd : raw; const ck = ckey(win, d, S.start, S.stat); return { label: d ? 'detrended' : 'raw', value: st(k, 'spearman'), band: [st(k, 'sur_lo'), st(k, 'sur_hi')], ceil: [getCeil(g, ck, 'ceil_min'), getCeil(g, ck, 'ceil_med'), getCeil(g, ck, 'ceil_max')], color: ink }; });
+  rhoStrip($('ts-strip'), strip);
+  const ck = ckey(win, det, S.start, S.stat);
+  const items = [['n periods', fmt(st(key, 'n'), 0)], ['n eff (Bretherton)', fmt(st(key, 'n_eff'), 1)], ['ρ raw', fmt(st(raw, 'spearman'))], ['ρ detrended', fmt(st(dd, 'spearman'))], ['chance band', `${fmt(st(key, 'sur_lo'))} … ${fmt(st(key, 'sur_hi'))}`], ['percentile of ρ · p', `${fmt(st(key, 'sur_pct'))} · ${fmt(st(key, 'sur_p'), 3)}`], ['run-vs-run ρ', `${fmt(getCeil(g, ck, 'ceil_med'))} (${fmt(getCeil(g, ck, 'ceil_min'))}…${fmt(getCeil(g, ck, 'ceil_max'))})`], ['obs vs each run ρ', `${fmt(getCeil(g, ck, 'obsrun_med'))} (${fmt(getCeil(g, ck, 'obsrun_min'))}…${fmt(getCeil(g, ck, 'obsrun_max'))})`], ['τ', fmt(st(key, 'kendall'))], ['hit rate', fmt(st(key, 'hit_rate'))], ['up/down', fmt(st(key, 'updown'))], ['ratio (raw)', st(raw, 'ratio') == null ? '—' : `×${fmt(st(raw, 'ratio'))}`], ['mean pct', fmt(st(key, 'pct_mean'))], ['outside 5–95%', fmt(st(key, 'pct_out90'))]];
+  $('ts-stats').replaceChildren(...items.map(([k, v]) => el('div', { class: 'stat' }, el('span', { class: 'k', text: k }), el('span', { class: 'v', text: v }))));
+}
+
+// ---------- maps ----------
+async function renderMap(token) {
+  const host = $('map'); host.replaceChildren(el('div', { class: 'loading', text: 'Loading…' }));
+  if (S.level === 'global') { host.replaceChildren(el('p', { class: 'note', text: 'Choose a basin, super-region, region or country level to draw a map; the global value is in the Overview.' })); $('map-legend').replaceChildren(); return; }
+  const [geo, data] = await Promise.all([loadJSON(`geo/${S.level}.json`), loadJSON(cellFile('maps', S.level, S.outcome))]); if (token !== renderToken) return;
+  const key = skey('obs_vs_model', S.series, S.stat, S.window, S.det, S.start), rawKey = skey('obs_vs_model', S.series, S.stat, S.window, false, S.start);
+  const nObs = Object.fromEntries(geoRows('maps', S.level).map(g => [g.geo, g]));
+  const valueOf = (id) => { const g = data.geos[id]; if (!g || !g.stats) return null; if (S.metric === 'n_obs') return nObs[id] ? nObs[id].n_obs_land : null; return getStat(data, g, S.metric === 'ratio' ? rawKey : key, S.metric); };
+  const vals = geo.features.map(f => valueOf(f.properties.id));
+  const scale = metricScale(S.metric, vals);
+  $('map-title').textContent = `${(Object.fromEntries(METRICS))[S.metric]} — ${outcomeLabel(S.outcome)}, ${seriesLabel(S.series)} (${S.stat}), ${windowLabel(S.window)}, ${S.det ? 'detrended' : 'raw'}, ${S.start}–${META.storm_years[1]}`;
+  legendBar($('map-legend'), S.metric === 'spearman' || S.metric === 'kendall' ? { f: (t) => scale.f(t * 2 - 1), ticks: scale.ticks } : S.metric === 'ratio' ? { f: (t) => scale.f(Math.pow(2, (t * 4 - 2))), ticks: scale.ticks } : S.metric === 'n_obs' ? { f: (t) => scale.f(t * (d3.max(vals.filter(v => v != null)) || 1)), ticks: scale.ticks } : { f: (t) => scale.f(t), ticks: scale.ticks }, (Object.fromEntries(METRICS))[S.metric]);
+  const W = Math.max(320, host.clientWidth || 900), H = Math.round(W * 0.52);
+  const proj = d3.geoNaturalEarth1().fitExtent([[4, 4], [W - 4, H - 4]], { type: 'Sphere' });
+  const path = d3.geoPath(proj);
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'choropleth map');
+  svg.append('path').attr('class', 'sphere').attr('d', path({ type: 'Sphere' }));
+  svg.append('path').attr('class', 'graticule').attr('d', path(d3.geoGraticule10()));
+  if (S.level === 'basin') { const land = await loadJSON('geo/super_region.json'); if (token !== renderToken) return; svg.append('g').selectAll('path').data(land.features).join('path').attr('class', 'backdrop').attr('d', path); }
+  const tip = el('div', { class: 'tip' }); tip.hidden = true;
+  const units = svg.append('g').selectAll('path').data(geo.features).join('path').attr('d', path).attr('class', d => 'unit' + (nObs[d.properties.id] && !nObs[d.properties.id].kept ? ' dropped' : ''))
+    .attr('fill', (d, i) => { const c = vals[i] == null ? null : scale.f(vals[i]); return c || css('--grid'); }).attr('fill-opacity', S.level === 'basin' ? 0.75 : 1);
+  units.on('pointermove', (ev, d) => { const i = geo.features.indexOf(d); const g = nObs[d.properties.id] || {}; const gg = data.geos[d.properties.id]; const lo = getStat(data, gg, key, 'sur_lo'), hi = getStat(data, gg, key, 'sur_hi'); tip.replaceChildren(el('div', { text: d.properties.name }), el('div', { class: 'r' }, el('b', { text: vals[i] == null ? (g.kept === false ? 'dropped (<10 observed storms)' : '—') : scale.fmt(vals[i]) }), el('span', { text: (Object.fromEntries(METRICS))[S.metric] })), el('div', { class: 'r' }, el('b', { text: `${fmt(lo)}…${fmt(hi)}` }), el('span', { text: 'chance band for ρ' })), el('div', { class: 'r' }, el('b', { text: String(g.n_obs_land == null ? '—' : g.n_obs_land) }), el('span', { text: 'observed land-hitting storms' }))); tip.hidden = false; const [px, py] = d3.pointer(ev, host); tip.style.left = `${Math.min(host.clientWidth - 220, px + 12)}px`; tip.style.top = `${py + 12}px`; }).on('pointerleave', () => { tip.hidden = true; });
+  host.replaceChildren(svg.node(), tip);
+}
+
+// ---------- scorecard ----------
+async function renderScorecard(token) {
+  const host = $('sc-table'); host.replaceChildren(el('div', { class: 'loading', text: 'Loading…' }));
+  const data = await loadJSON(cellFile('scorecard', S.level, S.outcome)); if (token !== renderToken) return;
+  const key = skey('obs_vs_model', S.series, S.stat, S.window, S.det, S.start), raw = skey('obs_vs_model', S.series, S.stat, S.window, false, S.start), dd = skey('obs_vs_model', S.series, S.stat, S.window, true, S.start);
+  const ck = ckey(S.window, S.det, S.start, S.stat);
+  const nObs = Object.fromEntries(geoRows('scorecard', S.level).map(g => [g.geo, g]));
+  $('sc-title').textContent = `${levelLabel(S.level)} scorecard — ${outcomeLabel(S.outcome)}, ${seriesLabel(S.series)} (${S.stat}), ${windowLabel(S.window)}, ${S.start}–${META.storm_years[1]}`;
+  const st = (g, k, n) => getStat(data, g, k, n);
+  const rows = Object.entries(data.geos).filter(([id]) => nObs[id] && nObs[id].kept).map(([id, g]) => ({ id, name: g.name, n_obs: nObs[id] ? nObs[id].n_obs_land : null, n: st(g, key, 'n'), n_eff: st(g, key, 'n_eff'), rho_raw: st(g, raw, 'spearman'), rho_det: st(g, dd, 'spearman'), sur_lo: st(g, key, 'sur_lo'), sur_hi: st(g, key, 'sur_hi'), sur_pct: st(g, key, 'sur_pct'), ceil_med: getCeil(g, ck, 'ceil_med'), ceil_min: getCeil(g, ck, 'ceil_min'), ceil_max: getCeil(g, ck, 'ceil_max'), obsrun_med: getCeil(g, ck, 'obsrun_med'), kendall: st(g, key, 'kendall'), hit_rate: st(g, key, 'hit_rate'), updown: st(g, key, 'updown'), ratio: st(g, raw, 'ratio'), pct_mean: st(g, key, 'pct_mean'), pct_out90: st(g, key, 'pct_out90') }));
+  const cols = [['name', 'Place', 0], ['n_obs', 'Obs storms', 0], ['n', 'n', 0], ['n_eff', 'n eff', 1], ['rho_raw', 'ρ raw', 2], ['rho_det', 'ρ detr.', 2], ['sur', `Chance band (${S.det ? 'detr.' : 'raw'})`, 2], ['sur_pct', 'ρ pct in band', 2], ['ceil', 'Run-vs-run ρ (min–max)', 2], ['obsrun_med', 'Obs-vs-run ρ med', 2], ['kendall', `τ (${S.det ? 'detr.' : 'raw'})`, 2], ['hit_rate', 'Hit rate', 2], ['updown', 'Up/down', 2], ['ratio', 'Ratio (raw)', 2], ['pct_mean', 'Mean pct', 2], ['pct_out90', 'Outside 5–95%', 2]];
+  let sortBy = S._sort || 'rho_raw', dir = S._dir || -1;
+  const sortVal = (r, k) => k === 'sur' ? r.sur_lo : k === 'ceil' ? r.ceil_med : r[k];
+  const table = el('table'); const thead = el('thead'); const tr = el('tr');
+  for (const [k, l] of cols) { const th = el('th', { class: 'sortable' + (k === 'name' ? '' : ' n') + (k === sortBy ? ' sorted' : ''), text: l + (k === sortBy ? (dir < 0 ? ' ↓' : ' ↑') : ''), tabindex: '0' }); const go = () => { if (sortBy === k) dir = -dir; else { sortBy = k; dir = k === 'name' ? 1 : -1; } S._sort = sortBy; S._dir = dir; renderScorecard(++renderToken); }; th.addEventListener('click', go); th.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }); tr.append(th); }
+  thead.append(tr); table.append(thead);
+  rows.sort((a, b) => { const va = sortVal(a, sortBy), vb = sortVal(b, sortBy); if (va == null && vb == null) return 0; if (va == null) return 1; if (vb == null) return -1; return (typeof va === 'string') ? dir * va.localeCompare(vb) : dir * (va - vb); });
+  const tbody = el('tbody'); const sc = divergingScale([-1, 0, 1]);
+  for (const r of rows) { const tr2 = el('tr'); const rhoSel = S.det ? r.rho_det : r.rho_raw; const sig = sigOf(r.sur_lo, r.sur_hi, rhoSel); for (const [k, l, d] of cols) { const v = r[k]; let text; if (k === 'name') text = v; else if (k === 'sur') text = `${fmt(r.sur_lo)}…${fmt(r.sur_hi)}`; else if (k === 'ceil') text = `${fmt(r.ceil_med)} (${fmt(r.ceil_min)}…${fmt(r.ceil_max)})`; else if (k === 'ratio') text = v == null ? '—' : `×${fmt(v, 2)}`; else text = fmt(v, d); const td = el('td', { class: (k === 'name' ? '' : 'n') + (((k === 'rho_raw' && !S.det) || (k === 'rho_det' && S.det)) && sig ? ' sig' : ''), text }); if ((k === 'rho_raw' || k === 'rho_det') && v != null) { const bar = el('span', { class: 'cellbar' }); bar.style.width = `${Math.abs(v) * 40}px`; bar.style.background = sc(v); td.append(bar); } tr2.append(td); } tbody.append(tr2); }
+  table.append(tbody); host.replaceChildren(table);
+  if (!rows.length) host.append(el('p', { class: 'note', text: 'No kept places at this level for this start year.' }));
+}
+
+// ---------- mortality ----------
+async function renderMortality(token) {
+  const data = await loadJSON(cellFile('mortality', S.level, 'deaths')); if (token !== renderToken) return;
+  const g = data.geos[S.geo]; if (!g) { $('mo-chart').replaceChildren(el('p', { class: 'note', text: 'No data for this place at this start year.' })); $('mo-stats').replaceChildren(); return; }
+  const i0 = T.from(data.years, S.start), years = data.years.slice(i0), win = S.window, det = S.det, xc = T.centers(years, win);
+  const mb = det ? g.band[bkey('model', win, true, S.start)] : sliceBand(g.band[bkey('model', win, false)], S.start);
+  const ib = det ? g.band[bkey('ibt', win, true, S.start)] : sliceBand(g.band[bkey('ibt', win, false)], S.start);
+  const obsW = T.apply(g.obs.slice(i0), win, det);
+  const modW = T.apply(g.series[S.series][S.stat].slice(i0), win, det), ibtW = T.apply(g.series.ibt[S.stat].slice(i0), win, det);
+  const ink = css('--ink'), mc = css('--model'), ic = css('--ibt');
+  const series = [{ name: 'Observed deaths', x: xc, values: obsW, color: ink, width: 2, dots: true }, { name: `Model on IBTrACS storms · ${S.stat}`, x: xc, values: ibtW, color: ic, width: 2 }, { name: `Model on CMIP6 · ${seriesLabel(S.series)} · ${S.stat}`, x: xc, values: modW, color: mc, width: 2.2 }];
+  const bands = []; if (mb && mb.q[0].length === xc.length) bands.push({ name: 'CMIP6 5–95% (800 run × draw)', x: xc, lo: mb.q[0], hi: mb.q[4], color: mc, opacity: 0.16 }); if (ib && ib.q[0].length === xc.length) bands.push({ name: 'IBTrACS-pred 5–95% (100 fit draws)', x: xc, lo: ib.q[0], hi: ib.q[4], color: ic, opacity: 0.18 });
+  $('mo-title').textContent = `${g.name}: ${S.tag} deaths — ${S.start}–${META.mortality_years[1]}, ${windowLabel(win)}, ${det ? 'detrended' : 'raw'}` + (geoFlag(S.level, S.geo) ? ' (see caution in Methods: incomplete observed land-hitting record)' : '');
+  keyRow($('mo-key'), [[series[0].name, ink], [series[1].name, ic], ['IBTrACS-pred 5–95% (fit draws)', ic, true], [series[2].name, mc], ['CMIP6 5–95% (800 run × draw)', mc, true]]);
+  lineChart($('mo-chart'), { xDomain: [years[0], years[years.length - 1]], series, bands, yLabel: det ? 'deaths per year (detrended)' : 'deaths per year', yZero: !det, shade: years[0] < 2000 ? [years[0], 2000] : null, shadeLabel: 'out of sample for the v2000 fit', xLabel: (v, i) => mb ? `${mb.start[i]}–${mb.end[i]}` : String(v), extra: (i) => mb ? ['obs percentile in CMIP6 draws', fmt(mb.pct[i], 2)] : null });
+  const pairs = [['obs_vs_model', S.series, 'Observed vs CMIP6'], ['obs_vs_ibt', 'ibt', 'Observed vs IBTrACS-predicted'], ['ibt_vs_model', S.series, 'IBTrACS-predicted vs CMIP6']];
+  const st = (k, n) => getStat(data, g, k, n);
+  const table = el('table'); table.append(el('thead', {}, el('tr', {}, ...['Pair', 'Trend', 'n', 'n eff', 'ρ', 'Chance band', 'ρ pct · p', 'Run-vs-run ρ (min–max)', 'τ', 'Hit rate', 'Up/down', 'Ratio', 'Mean pct', 'Outside 5–95%'].map((h, i) => el('th', { class: i < 2 ? '' : 'n', text: h })))));
+  const tb = el('tbody');
+  for (const [pair, sid, label] of pairs) for (const d of [false, true]) { const k = skey(pair, sid, S.stat, win, d, S.start); const kr = skey(pair, sid, S.stat, win, false, S.start); const ck = ckey(win, d, S.start, S.stat); const rho = st(k, 'spearman'); const sig = sigOf(st(k, 'sur_lo'), st(k, 'sur_hi'), rho); const vals = [label, d ? 'detrended' : 'raw', fmt(st(k, 'n'), 0), fmt(st(k, 'n_eff'), 1), fmt(rho), `${fmt(st(k, 'sur_lo'))}…${fmt(st(k, 'sur_hi'))}`, `${fmt(st(k, 'sur_pct'))} · ${fmt(st(k, 'sur_p'), 3)}`, pair === 'obs_vs_ibt' ? '—' : `${fmt(getCeil(g, ck, 'ceil_med'))} (${fmt(getCeil(g, ck, 'ceil_min'))}…${fmt(getCeil(g, ck, 'ceil_max'))})`, fmt(st(k, 'kendall')), fmt(st(k, 'hit_rate')), fmt(st(k, 'updown')), st(kr, 'ratio') == null ? '—' : `×${fmt(st(kr, 'ratio'))}`, fmt(st(k, 'pct_mean')), fmt(st(k, 'pct_out90'))]; tb.append(el('tr', {}, ...vals.map((v, i) => el('td', { class: (i < 2 ? '' : 'n') + (i === 4 && sig ? ' sig' : ''), text: v })))); }
+  table.append(tb); $('mo-stats').replaceChildren(table, el('p', { class: 'note', text: 'Bold ρ lies outside its 95% chance band. Chance bands use phase-randomized surrogates of the first series of each pair (observed deaths, or the IBTrACS-predicted series for the third pair). Percentile columns: for “Observed vs IBTrACS-predicted”, the observed value within the 100 fit-draw predictions; for “IBTrACS-predicted vs CMIP6”, the IBTrACS-predicted value within the 800 CMIP6 run × draw values.' }));
+}
+
+// ---------- methods ----------
+function renderMethods() {
+  const host = $('methods'); if (host.dataset.done) return; host.dataset.done = '1';
+  const m = META;
+  const sec = (title, ...kids) => el('div', {}, el('h2', { text: title }), ...kids);
+  const li = (t) => el('li', { text: t });
+  const tbl = (head, rows) => { const t = el('table'); t.append(el('thead', {}, el('tr', {}, ...head.map((h, i) => el('th', { class: i ? 'n' : '', text: h }))))); const b = el('tbody'); for (const r of rows) b.append(el('tr', {}, ...r.map((v, i) => el('td', { class: i ? 'n' : '', text: String(v) })))); t.append(b); return el('div', { class: 'tbl-wrap' }, t); };
+  const sanity = m.sanity || {};
+  const cov = m.ibtracs_wind_coverage || [];
+  const covRows = []; const byBasin = d3.group(cov, r => r.ib_basin);
+  for (const [b, rs] of byBasin) { const n = d3.sum(rs, r => r.n), usa = d3.sum(rs, r => r.usa), wmo = d3.sum(rs, r => r.wmo_10min_adj), none = d3.sum(rs, r => r.none); covRows.push([b || '(none)', n, usa, wmo, none, n ? (100 * none / n).toFixed(0) + '%' : '—']); }
+  const dropped = m.dropped || [];
+  const dropRows = dropped.filter(d => d.level !== 'global').map(d => [d.domain === 'storm' ? `Storms ${d.start_year}–${m.storm_years[1]}` : `Mortality ${d.start_year}–${m.mortality_years[1]}`, levelLabel(d.level), d.name, d.n_obs_land]);
+  const rake = m.rake || {};
+  host.replaceChildren(
+    sec('Definitions',
+      el('ul', {},
+        li(`Period: storms ${m.storm_years[0]}–${m.storm_years[1]}, deaths ${m.mortality_years[0]}–${m.mortality_years[1]} (the observed-deaths range), each cut to a chosen start year (${m.storm_starts.join(', ')} for storms; ${m.mortality_starts.join(', ')} for deaths; default ${m.default_start}). Everything restarts at the start year: the linear detrend, the moving averages, the top-tercile cut-offs, the sparse-place rule, the chance bands, the run-vs-run ceilings and the effective sample size. Model years come from the CMIP6 historical experiment through 2014 and from SSP2-4.5 for 2015 onward (the splice).`),
+        li(`CLIMADA frames: ${m.climada_version} (admin0 consolidated 2026-10-26, admin1 2026-10-18). Against the earlier stage4b_v2 run it drops spurious inland units (Kyrgyzstan, Tajikistan, Uzbekistan; ten admin-1 units such as Iowa, Qinghai and Jammu & Kashmir), adds West African exposure, lowers exposed population by about 10% and raises land-hitting storm counts by about 2.5%. The IBTrACS CLIMADA land run was not rerun.`),
+        li('Floor: tropical-storm strength, lifetime (or over-unit) maximum wind ≥ 18 m/s, on both sides. Categories in m/s: Cat 1 ≥ 33, Cat 2 ≥ 43, Cat 3 ≥ 50, Cat 4 ≥ 58, Cat 5 ≥ 70; Cat k means exactly k; 3+ and 4+ are cumulative.'),
+        li('All storms (global and basin levels): tc-risk lifetime max_vmax per synthetic track; IBTrACS per-storm track maximum of usa_wind (1-min, kt → m/s). Every track and every non-spur IBTrACS track counts, including provisional 2024–2025 tracks.'),
+        li('Land-hitting storms: CLIMADA max wind over exposed admin0 units. Country = that unit’s own max wind. Region, super-region, global and basin aggregates count each storm once, at its worst category over the units inside the aggregate. A CLIMADA storm is one (run, draw, year, basin, storm_id): storm_id is unique only within a basin, so storms are keyed with their basin (the 20260924 CLIMADA figure script keyed without basin and merged distinct storms; see the sanity table).'),
+        li('Members: CMCC-ESM2 r1, EC-Earth3 r1, MPI-ESM1-2-HR r1, MRI-ESM2-0 r1–r5 (8 runs, 4 GCMs), 100 tc-risk draws each. Per run: the annual count as the mean (separately the median) over its 100 draws; per GCM: the same statistic over its runs; ensemble: the same statistic over the 4 GCMs (MRI not over-weighted); pooled: the same statistic over the 8 runs. The 800 run × draw annual series are kept for the percentile measure and the bands.'),
+        li('Windows: 1-, 5- and 10-year centred moving averages for storms, 5-, 10- and 15-year for deaths, valid points only. Non-overlapping blocks were dropped: from 1985 a 10-year block series has four points and a rank correlation on four points can take only a handful of values.'),
+        li('Sparse places: locations with fewer than 10 observed land-hitting storms from the start year are dropped from every statistic at that start year (the list is below). The rule is evaluated per start year and per half, so the storm and mortality halves can differ.'),
+        li('Observed storm years are genesis calendar years (the IBTrACS sid prefix), which is what the CLIMADA IBTrACS files use; the 20260924 all-storm script used the IBTrACS season instead.'))),
+    sec('Chance band, ceiling and effective sample size',
+      el('ul', {},
+        li(`Chance band: ${m.n_surrogates} phase-randomized surrogates of the observed annual series from the start year (same Fourier amplitudes, hence the same power spectrum and autocorrelation; uniformly random phases; mean kept), each detrended and smoothed exactly like the real series and rank-correlated with the model series. The band is the 2.5–97.5% range of those ρ values; the percentile is where the real ρ falls in that distribution; the p-value is two-sided. A ρ outside the band is one a smooth-but-unrelated observed series would rarely produce. For the two mortality pairs whose first series is the IBTrACS-predicted deaths, the surrogates are of that series.`),
+        li('Ceiling: every CMIP6 run correlated with the other seven at the same start year, window and detrend (28 pairs; cross-GCM pairs are the 18 that do not pair two MRI runs). These runs share the climate forcing but not the weather, so this is the agreement expected if the observed record behaved like one more run. Observed-vs-model inside that spread is as good as can be expected; well below it means the model is missing something that the runs share. The spread of observed-vs-each-run ρ is shown beside it.'),
+        li('Effective sample size: Bretherton et al. (1999), n (1 − r1 r2) / (1 + r1 r2), with r1 and r2 the lag-1 autocorrelations of the two windowed series, clipped to [1, n]. A 10-year moving average over 40 years typically leaves 4–6 effective samples.'),
+        li('Phase: CMIP6 historical runs are free-running coupled models: their internal variability (ENSO and the rest) is not phased with the real world, so year-to-year rank correlation is expected to be about zero; the 1-yr results are that check. Multi-year agreement mostly reflects shared forced trends and observing-system trends in IBTrACS, which is why every measure is reported raw and after a linear detrend of each annual series from the start year (before smoothing).'))),
+    sec('Basin mapping',
+      el('p', { class: 'note', text: 'tc-risk tracks come in seven basin files (AU EP NA NI SI SP WP). IBTrACS has no AU basin, so every IBTrACS storm is assigned the tc-risk basin whose box (below) contains its genesis point, with longitudes wrapped to −180..180. This rule reproduces the basin labels of the observed-deaths training file exactly (1,584 of 1,584 storms). IBTrACS storms whose genesis lies in no box (South Atlantic; South Pacific east of 110°W) count at every level except basin, and are recoded to NA for the mortality model’s basin covariate, as the validate step did for training.' }),
+      tbl(['tc-risk basin', 'lon from', 'lon to', 'lat from', 'lat to', 'IBTrACS basins inside'], (m.basin_boxes || []).map(b => [b.basin, b.lon0, b.lon1, b.lat0, b.lat1, { NA: 'NA (west of 0°)', EP: 'EP', WP: 'WP', NI: 'NI', SI: 'SI west of 100°E', AU: 'SI east of 100°E + SP west of 180°', SP: 'SP east of 180° to 110°W' }[b.basin] || '']))),
+    sec('IBTrACS intensity gaps',
+      el('p', { class: 'note', text: 'usa_wind is complete in the North Atlantic and East Pacific but missing for many storms elsewhere, mostly in early decades. Where usa_wind is absent the storm uses wmo_wind divided by 0.88 (the usual 10-min → 1-min conversion; New Delhi reports 3-min means, so NI values converted this way are slightly high). Storms with neither wind are counted in no category (they are listed as “none” below). Spur tracks are excluded.' }),
+      tbl(['IBTrACS basin', 'storms 1970–2025', 'usa_wind', 'wmo_wind ÷ 0.88', 'no wind', 'share unclassified'], covRows)),
+    sec('Known artefacts in the two records',
+      el('ul', {},
+        li('tc-risk track counts are a designed frequency, piecewise constant in time. For each run, scenario, change-point time bin and basin the number of tracks per year was set from TempestExtremes detections on the GCM’s own daily fields, scaled per basin to IBTrACS and rounded; within a bin every year has the same number of tracks, so year-to-year variation in the all-storm “total” series is zero by construction and only intensities and landfall sampling vary. The raw counts are therefore a bin-resolution frequency estimate, not an annual one.'),
+        li(`The 1965–1974 bin is about 40% low for 7 of 8 runs because TempestExtremes has no detections for 1965–1969 there (only MPI-ESM1-2-HR has data); the empty years were floored to one storm and averaged into the first bin. ${STEP_NOTE.split('. The observed')[0]}. Four North Atlantic bins with zero detections (CMCC historical 1987–2001; CMCC ssp585 2030–41; MPI ssp585 2040–50 and 2062–74) carry a placeholder 7 storms per year. The calibration’s IBTrACS basin split (NA 7.8, EP 21.5 storms per year over 1985–2014) differs from IBTrACS counted in the tc-risk boxes at ≥ 18 m/s (NA 18.5, EP 13.2), which is why all-storm model/observed ratios are about 0.4 in NA and 1.8 in EP while the global total matches (0.98).`),
+        li('The IBTrACS CLIMADA land run is incomplete in places: it holds EP storm files in only two years (2006, 2015), no NI storm files in the 1970s and 9 in the 1980s, and 47 WP storm files in the 1970s against 175–190 per decade afterwards. usa_wind coverage is complete for EP and WP, so this is upstream in the CLIMADA IBTrACS processing, not an intensity gap. Affected places keep their rows here (EP passes the 10-storm rule) but their land-level statistics should not be read as agreement or disagreement. The all-storm comparison (IBTrACS netCDF) is unaffected. Globally the CLIMADA land run agrees with an independent IBTrACS dist2land count (39.7 vs 40.1 land-hitting storms per year, 1985–2025).'),
+        li('Levels (1985–2025, v3 frames): the global all-storm count matches IBTrACS (0.98×), but model land-hitting storms run about 1.75× observed (landfall fraction 0.79 vs 0.44) and model Cat 5 storms over land about 3.7× observed (31% of model Cat 5 storms are Cat 5 over land against 5% observed; the v2 frames had 60%), although the model has fewer Cat 5 storms overall (0.6×). By basin the land-hitting ratio is NA 0.92, NI 0.98, AU 1.34, WP 1.41, SI 2.11; EP and SP are not comparable (observed land run nearly empty). These are landfall-propensity and at-land-intensity properties of the tracks, not frequency; rank measures are unaffected by a constant factor, the ratio and percentile measures are not.'),
+        li('Consequence for the detrended results: the shared mid-1970s step survives a linear detrend and shows up as positive detrended rank agreement at the global and WP land levels for a 1970 start. Start years of 1980 and later avoid it; the headline panel on the Overview shows the dependence.'))),
+    sec('Mortality',
+      el('ul', {},
+        li('Observed deaths: the approved v1985 file (1985–2023; the v2000 file covers only 2000–2023). Its rows are every IBTrACS CLIMADA storm × admin0 pair with exposure hours > 0 (3,024 rows, 90 countries, zeros kept); the model side uses the same row universe through the shipped prep step.'),
+        li(`Shipped model: gpd_cens e7a78b19, A1/A0 blend, super-region rake ratios from ${rake.path || 'the shipped model.json'}${rake.frames ? ` (${rake.frames})` : ''}. Pre-2000 years are out of sample for the v2000 fit and are shaded on the chart.`),
+        li('Every run (and the IBTrACS record) is predicted with the same 100 fit draws (the ship pairs fit seed = storm draw, which gives MRI r1 a single draw). CMIP6 deaths are averaged over the fit draws per tc-risk draw, so the 800 run × draw values carry hazard uncertainty only; IBTrACS-predicted deaths are kept per fit draw, so that band is mortality-model uncertainty only. Averaging over fit draws keeps the ship’s draw-mean level, which the rake ratios were computed on.'),
+        li('Adjusted = unadjusted × one ratio per super-region (Global re-rolled as the sum of super-regions). Within a super-region the rank measures are therefore identical for the two; they differ for Global and for basins that span super-regions.'),
+        li('Basin-level deaths are summed over all locations hit by storms from that basin.'))),
+    sec('Sanity check against the 20260924 figures',
+      el('p', { class: 'note', text: 'Global mean annual count per member, historical 1970–2014 (mean over draws, then over years and members), next to the quantities the two 20260924 scripts print (those ran on the stage4b_v2 frames).' }),
+      tbl(['Quantity', 'Cat 3+', 'Cat 4+', 'Cat 5'], [
+        ['tc-risk all tracks — this pipeline', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.tracks || {}).pipeline && sanity.tracks.pipeline[k]))],
+        ['tc-risk all tracks — 20260924 script', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.tracks || {}).script_20260924 && sanity.tracks.script_20260924[k]))],
+        ['CLIMADA land-hitting — this pipeline (basin-keyed storms)', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.climada || {}).pipeline && sanity.climada.pipeline[k]))],
+        ['CLIMADA land-hitting — 20260924 script (no basin key)', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.climada || {}).script_20260924_no_basin_key && sanity.climada.script_20260924_no_basin_key[k]))],
+        ['IBTrACS land-hitting (observed, CLIMADA)', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.ibtracs_land || {}).pipeline && sanity.ibtracs_land.pipeline[k]))],
+        ['IBTrACS all storms — this pipeline (sid year, wmo fallback)', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.ibtracs_all || {}).pipeline_sid_year_with_wmo_fallback && sanity.ibtracs_all.pipeline_sid_year_with_wmo_fallback[k]))],
+        ['IBTrACS all storms — 20260924 script (season, usa_wind only)', ...['cat3plus', 'cat4plus', 'cat5'].map(k => fmt((sanity.ibtracs_all || {}).script_20260924_season_usa_only && sanity.ibtracs_all.script_20260924_season_usa_only[k]))]])),
+    sec('Dropped locations (fewer than 10 observed land-hitting storms from the start year)', dropRows.length ? tbl(['Half and period', 'Level', 'Place', 'Observed storms'], dropRows) : el('p', { class: 'note', text: 'None.' })),
+    sec('No reanalysis-driven run',
+      el('p', { class: 'note', text: 'tc_risk/output holds only the cmip6 tree. A tc-risk run forced by ERA5 (or an AMIP-style run with observed SSTs) would be phased with the real world and is the natural upgrade: with it the 1-yr and 5-yr measures become a test of the downscaling rather than of shared trends. Until then, treat agreement here as agreement in trends and in climatological level, not in timing.' })),
+    el('p', { class: 'note', text: `Generated ${m.generated} on CLIMADA ${m.climada_version}. Code: idd_tc_mortality.viz.cmip6_ibtracs_comparison (aggregate → predict → stats → export).` }));
+}
+
+// ---------- boot ----------
+async function boot() {
+  META = await loadJSON('data/meta.json');
+  S.start = META.default_start;
+  bind();
+  const h = (location.hash || '').replace('#', '');
+  const tab = ['overview', 'series', 'maps', 'scorecard', 'mortality', 'methods'].includes(h) ? h : 'overview';
+  setTab(tab);
+}
+boot().catch(err => { console.error(err); $('ov-body').textContent = `Could not load data: ${err.message}`; });
+})();
+</script>
